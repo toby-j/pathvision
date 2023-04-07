@@ -29,7 +29,7 @@ setup(
     long_description_content_type='text/markdown',
 
     # The project's main homepage.
-    url='https://github.com/pair-code/saliency',
+    url='https://github.com/toby-j/pathvision',
 
     # Author details
     author='Toby Johnson',
@@ -44,10 +44,10 @@ setup(
         #   3 - Alpha
         #   4 - Beta
         #   5 - Production/Stable
-        'Development Status :: 4 - Beta',
+        'Development Status :: 3 - Alpha',
 
         # Indicate who your project is intended for
-        'Intended Audience :: Developers',
+        'Intended Audience :: Data Scientists/Developers',
 
         # Specify the Python versions you support here. In particular, ensure
         # that you indicate whether you support Python 2, Python 3 or both.
@@ -58,7 +58,7 @@ setup(
     ],
 
     # What does your project relate to?
-    keywords='Pathfinder',
+    keywords='Pathvision',
 
     # You can just specify the packages manually here if your project is
     # simple. Or you can use find_packages().
@@ -68,7 +68,6 @@ setup(
 
     # Alternatively, if you want to distribute just a my_module.py, uncomment
     # this:
-    #py_modules=['saliency'],
 
     # List run-time dependencies here.  These will be installed by pip when
     # your project is installed. For an analysis of "install_requires" vs pip's
