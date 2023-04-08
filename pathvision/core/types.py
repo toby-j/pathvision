@@ -24,5 +24,5 @@ class Trajectory(StrEnum):
 class Models(StrEnum):
     FASTERCNN_RESNET50_FPN = "fasterrcnn_resnet50_fpn"
 
-class Dataset(StrEnum):
+class Labels(StrEnum):
     COCO = "COCO"
