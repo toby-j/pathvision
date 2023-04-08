@@ -1,20 +1,18 @@
 import sys
 from enum import StrEnum
 
-# TODO: StrEnum is part of python 3.11. Make alternative for older versions.
-
 if sys.version_info >= (3, 11):
     from enum import StrEnum
 else:
-    class StrEnum(str):
-        pass
+    # As natve StrEnum is only supported in 3.11, so we import a seperate package that handles it if client is on a lesser version
+    from strenum import StrEnum
 
 
 class Segmentation(StrEnum):
     PANOPTIC_DEEPLAB = "Panoptic Deeplab"
 
 
-class Gradients(StrEnum):
+class Gradient(StrEnum):
     INTEGRATED_GRADIENTS = "Integrated Gradients"
     SMOOTHGRAD = "Smoothgrad"
     VANILLA_GRADIENTS = "Vanilla Gradients"
@@ -23,6 +21,8 @@ class Gradients(StrEnum):
 class Trajectory(StrEnum):
     KALMAN_FILTER = "Kalman Filter"
 
+class Models(StrEnum):
+    FASTERCNN_RESNET50_FPN = "fasterrcnn_resnet50_fpn"
 
-class Datasets(StrEnum):
+class Dataset(StrEnum):
     COCO = "COCO"

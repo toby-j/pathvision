@@ -1,5 +1,5 @@
 from pathvision.core.base import CorePathvision
-from pathvision.core.types import Gradients, Segmentation, Trajectory
+from pathvision.core.types import Gradient, Segmentation, Trajectory, Dataset, Models
 
 INCORRECT_VALUE = 'INCORRECT_VALUE'
 
@@ -15,19 +15,30 @@ class ObjectDetection(CorePathvision):
                       gradient_technique,
                       dataset,
                       trajectory_technique=None,
-                      segmentation_technique=None):
+                      segmentation_technique=None,
+                      pre_trained_model=None):
 
-        if not (gradient_technique in iter(Gradients)):
-            raise ValueError(PARAMETER_ERROR_MESSAGE['INCORRECT_VALUE'].format(gradient_technique, [e for e in Gradients]))
+        # Check our parameters are valid types using Enums
 
-        if not (gradient_technique in iter(Gradients)):
-            raise ValueError(PARAMETER_ERROR_MESSAGE['INCORRECT_VALUE'].format(gradient_technique, [e for e in Gradients]))
+        if not (gradient_technique in iter(Gradient)):
+            raise ValueError(PARAMETER_ERROR_MESSAGE['INCORRECT_VALUE'].format(gradient_technique, [e for e in Gradient]))
 
-        if not (gradient_technique in iter(Segmentation)) and segmentation_technique is not None:
-            raise ValueError(PARAMETER_ERROR_MESSAGE['INCORRECT_VALUE'].format(gradient_technique, [e for e in Segmentation]))
+        if not (dataset in iter(Dataset)):
+            raise ValueError(PARAMETER_ERROR_MESSAGE['INCORRECT_VALUE'].format(dataset, [e for e in Dataset]))
 
-        if not (gradient_technique in iter(Trajectory)) and trajectory_technique is not None:
-            raise ValueError(PARAMETER_ERROR_MESSAGE['INCORRECT_VALUE'].format(gradient_technique, [e for e in Trajectory]))
+        if not (trajectory_technique in iter(Trajectory)) and trajectory_technique is not None:
+            raise ValueError(PARAMETER_ERROR_MESSAGE['INCORRECT_VALUE'].format(trajectory_technique, [e for e in Trajectory]))
+
+        if not (segmentation_technique in iter(Segmentation)) and segmentation_technique is not None:
+            raise ValueError(PARAMETER_ERROR_MESSAGE['INCORRECT_VALUE'].format(segmentation_technique, [e for e in Segmentation]))
+
+        if not (pre_trained_model in iter(Models)) and pre_trained_model is not None:
+            raise ValueError(PARAMETER_ERROR_MESSAGE['INCORRECT_VALUE'].format(pre_trained_model, [e for e in Models]))
+
+
+
+
+
 
 
 

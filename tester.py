@@ -1,13 +1,12 @@
 import pathvision.core as pathvision
-from pathvision.core import PARAMETER_ERROR_MESSAGE, Gradients
-
+from pathvision.core.logger import logger as LOGGER
 
 def tester():
-    gradient_technique = 'Integrated Gradiehynts'
-    if not (gradient_technique in iter(Gradients)):
-        raise ValueError(
-            PARAMETER_ERROR_MESSAGE['INCORRECT_VALUE'].format(gradient_technique, [e for e in Gradients]))
-
+    LOGGER.debug("Debug message")
+    LOGGER.info("Info message")
+    LOGGER.warning("Warning message")
+    LOGGER.error("Error message")
+    LOGGER.critical("Critical message")
 
 if __name__ == "__main__":
     tester()
