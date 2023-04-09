@@ -1,7 +1,7 @@
 import sys
-from enum import StrEnum
 
 if sys.version_info >= (3, 11):
+    print(sys.version_info)
     from enum import StrEnum
 else:
     # As natve StrEnum is only supported in 3.11, so we import a seperate package that handles it if client is on a lesser version

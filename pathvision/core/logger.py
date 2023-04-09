@@ -1,7 +1,7 @@
 import logging
 
-class CustomFormatter(logging.Formatter):
 
+class CustomFormatter(logging.Formatter):
     grey = "\x1b[38;21m"
     green = "\x1b[0;30;42m"
     yellow = "\x1b[1;30;43m"
@@ -22,9 +22,9 @@ class CustomFormatter(logging.Formatter):
         formatter = logging.Formatter(log_fmt)
         return formatter.format(record)
 
+
 logger = logging.getLogger("core")
-logger.setLevel(logging.DEBUG)
 ch = logging.StreamHandler()
-ch.setLevel(logging.DEBUG)
+ch.setLevel(logging.WARNING)
 ch.setFormatter(CustomFormatter())
 logger.addHandler(ch)

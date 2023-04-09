@@ -18,6 +18,7 @@ import cv2
 from PIL import Image, ImageOps, ImageEnhance
 import numpy as np
 import os
+import logging
 
 from numpy import savetxt
 from pycocotools.coco import COCO
@@ -159,7 +160,7 @@ class ObjectDetection(CorePathvision):
                       segmentation_technique=None,
                       pre_trained_model=None
                       , model=None,
-                      threshold=None,LoadFromDisk=False):
+                      threshold=None,LoadFromDisk=False, gpu=False, log=False):
 
         """Detects the objects in the frames. Uses trajectory prediction to find frames with errors. If errors are found,
         segmentation technique and the gradient technique are used on the frames to attempt to uncover the reason for the error.
@@ -174,6 +175,8 @@ class ObjectDetection(CorePathvision):
           model: optional: File path to user's model, pre_trained_model must be false.
           threshold: optional: percentage of what predictions the user is interested in. Objects classified with less than the threshold will be ignored
           LoadFromDisk: DEBUG: Loading the processed gradient numpys from disk to avoid calculating them from scratch again
+          gpu: OPTIONAL: if the client machine has a CUDA enabled GPU
+          logger: OPTIONAL: Defaults to just show the ERROR and WARNING messages, but can be switched to DEBUG mode.
         Raises:
             ValueError: Parameter sanitisation"""
 
@@ -202,6 +205,17 @@ class ObjectDetection(CorePathvision):
 
         if model and pre_trained_model:
             raise ValueError(PARAMETER_ERROR_MESSAGE['INCORRECT_CONFIG'].format(model, pre_trained_model))
+
+        if gpu:
+            if torch.cuda.is_available():
+                device = torch.device('cuda')  # Assign a CUDA device
+            else:
+                device = torch.device('cpu')  # Assign a CPU device
+
+        if log:
+            LOGGER.setLevel(logging.DEBUG)
+        else:
+            LOGGER.setLevel(logging.WARNING)
 
         conv_layer_outputs = {}
         class_idx_str = 'class_idx_str'
@@ -329,7 +343,7 @@ class ObjectDetection(CorePathvision):
                     for filename in os.listdir(vanilla_folder):
                         if filename.endswith('.csv'):
                             vanilla_arr = np.loadtxt(os.path.join(vanilla_folder, filename), delimiter=',')
-                            results['smoothgrad'].append(vanilla_arr)
+                            results['vanilla'].append(vanilla_arr)
 
                     for filename in os.listdir(smoothgrad_folder):
                         if filename.endswith('.csv'):
@@ -343,6 +357,7 @@ class ObjectDetection(CorePathvision):
                         model_zoo.get_config_file("COCO-PanopticSegmentation/panoptic_fpn_R_50_3x.yaml"))
                     cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.5  # set threshold for this model
                     # Find a model from detectron2's model zoo. You can use the https://dl.fbaipublicfiles... url as well
+                    cfg.MODEL.DEVICE = 'cpu'
                     cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url(
                         "COCO-PanopticSegmentation/panoptic_fpn_R_50_3x.yaml")
                     predictor = DefaultPredictor(cfg)
@@ -365,7 +380,7 @@ class ObjectDetection(CorePathvision):
                         # Apply a bitwise-and operation to the original image to extract the masked region
                         original_base_image = Image.new("L", results['size'], 0)
 
-                        smoothgrad_arr = results['smoothgrad'][i] * 10.0
+                        smoothgrad_arr = ((results['smoothgrad'][i] * 10.0) * 255).astype(np.uint8)
 
                         original_base_image.paste(TF.to_pil_image(smoothgrad_arr), results['coords'][i])
 
