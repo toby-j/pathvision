@@ -13,13 +13,13 @@ class Segmentation(StrEnum):
 
 
 class Gradient(StrEnum):
-    INTEGRATED_GRADIENTS = "Integrated Gradients"
+    INTEGRATED_GRADIENTS = "IntegratedGradients"
     SMOOTHGRAD = "Smoothgrad"
-    VANILLA_GRADIENTS = "Vanilla Gradients"
+    VANILLA_GRADIENTS = "VanillaGradients"
 
 
 class Trajectory(StrEnum):
-    KALMAN_FILTER = "Kalman Filter"
+    KALMAN_FILTER = "KalmanFilter"
 
 class Models(StrEnum):
     FASTERCNN_RESNET50_FPN = "fasterrcnn_resnet50_fpn"

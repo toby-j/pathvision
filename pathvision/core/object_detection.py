@@ -29,7 +29,7 @@ from detectron2 import model_zoo
 from detectron2.config import get_cfg
 from detectron2.engine import DefaultPredictor
 import pathvision.core as pathvision
-from pathvision.core.visualisation import VisualizeImageGrayscale
+from pathvision.core.visualisation import VisualizeImage
 
 to_pil = ToPILImage()
 import torchvision.transforms.functional as TF
@@ -49,6 +49,7 @@ INCORRECT_VALUE = 'INCORRECT_VALUE'
 EMPTY_FRAMES = 'EMPTY_FRAMES'
 INCORRECT_CONFIG = 'INCORRECT_CONFIG'
 NO_MODEL = 'NO_MODEL'
+UNEQUAL_GRADIENT_COUNT = 'UNEQUAL_GRADIENT_COUNT'
 
 PARAMETER_ERROR_MESSAGE = {
     INCORRECT_VALUE: (
@@ -63,8 +64,13 @@ PARAMETER_ERROR_MESSAGE = {
     NO_MODEL: (
         'Model not loaded correctly, please refer to the spesification for uploading your own model, '
         'or use a pre-trained model'
+    ),
+    UNEQUAL_GRADIENT_COUNT: (
+        'Missing gradients'
     )
 }
+
+#TODO: The images are not being loaded from disk correctly.
 
 
 # Utility Functions
@@ -160,7 +166,7 @@ class ObjectDetection(CorePathvision):
                       segmentation_technique=None,
                       pre_trained_model=None
                       , model=None,
-                      threshold=None,LoadFromDisk=False, gpu=False, log=False):
+                      threshold=None,LoadFromDisk=False, log=False):
 
         """Detects the objects in the frames. Uses trajectory prediction to find frames with errors. If errors are found,
         segmentation technique and the gradient technique are used on the frames to attempt to uncover the reason for the error.
@@ -174,8 +180,7 @@ class ObjectDetection(CorePathvision):
           pre_trained_model: optional: a pre-trained model from tensorflow's torchvision, model must be false
           model: optional: File path to user's model, pre_trained_model must be false.
           threshold: optional: percentage of what predictions the user is interested in. Objects classified with less than the threshold will be ignored
-          LoadFromDisk: DEBUG: Loading the processed gradient numpys from disk to avoid calculating them from scratch again
-          gpu: OPTIONAL: if the client machine has a CUDA enabled GPU
+          LoadFromDisk: DEBUG: Loading the processed gradient outs from disk to avoid calculating them from scratch again
           logger: OPTIONAL: Defaults to just show the ERROR and WARNING messages, but can be switched to DEBUG mode.
         Raises:
             ValueError: Parameter sanitisation"""
@@ -206,16 +211,18 @@ class ObjectDetection(CorePathvision):
         if model and pre_trained_model:
             raise ValueError(PARAMETER_ERROR_MESSAGE['INCORRECT_CONFIG'].format(model, pre_trained_model))
 
-        if gpu:
-            if torch.cuda.is_available():
-                device = torch.device('cuda')  # Assign a CUDA device
-            else:
-                device = torch.device('cpu')  # Assign a CPU device
+        if torch.cuda.is_available():
+            device = torch.device('cuda')  # Assign a CUDA device
+        else:
+            device = torch.device('cpu')  # Assign a CPU device
 
         if log:
             LOGGER.setLevel(logging.DEBUG)
         else:
             LOGGER.setLevel(logging.WARNING)
+
+        for handler in LOGGER.handlers:
+            handler.setLevel(LOGGER.level)
 
         conv_layer_outputs = {}
         class_idx_str = 'class_idx_str'
@@ -287,21 +294,35 @@ class ObjectDetection(CorePathvision):
                 pre, annot_labels = _pre_process_model_output(preds=od_preds, coco=coco)
 
                 results = {
-                    "origin": [],
+                    "origin": None,
                     "crops": [],
                     "crops_on_origin": [],
                     "coords": [],
                     "size": (),
-                    "vanilla": [],
-                    "smoothgrad": [],
+                    "vanilla_gradients": {
+                        "heatmap_3d": [],
+                        "mask_3d": [],
+                        "grayscale_2d": [],
+                    },
+                    'smoothgrad': {
+                        "heatmap_3d": [],
+                        "mask_3d": [],
+                        "grayscale_2d": [],
+                    },
                 }
+
+                folder_dict = {"VanillaGradients": "pathvision/test/outs/vanilla/",
+                               "Smoothgrad": "pathvision/test/outs/smoothgrad/"}
+
+                lower_technique_dict = {"VanillaGradients": "vanilla_gradients",
+                               "Smoothgrad": "smoothgrad"}
 
                 '''
                 Let's crop and organise every bounding box image
                 '''
                 # Get the size of the original image as our background canvas
                 results['size'] = tuple(reversed(im_tensor[0].shape[-2:]))
-                results['origin'].append(im_tensor[0])
+                results['origin'] = im_tensor[0]
                 for i in range(len(pre[0]['labels'])):
                     cropped_image, bb_coords = _crop_frame(im_tensor, pre[0]['boxes'][i].tolist())
                     results['crops'].append(_load_image_arr(pil_img=cropped_image))
@@ -311,6 +332,8 @@ class ObjectDetection(CorePathvision):
                     results['crops_on_origin'].append(original_size_image)
 
                 class_idxs = pre[0]['labels']
+                technique_key = lower_technique_dict.get(gradient_technique)
+                print("CLASS INDEX")
                 if LoadFromDisk == False:
                     for i, tensor in enumerate(class_idxs):
                         call_model_args = {class_idx_str: tensor.item()}
@@ -318,37 +341,66 @@ class ObjectDetection(CorePathvision):
                         cat_id = call_model_args[class_idx_str]
                         cat_name = next(cat['name'] for cat in cats if cat['id'] == cat_id)
                         LOGGER.info("Category name for index value {}: {}".format(cat_id, cat_name))
-                        vanilla_mask_3d = vanilla_vision.GetMask(results['crops'][i], _call_model_function,
-                                                                 call_model_args)
-                        smoothgrad_mask_3d = vanilla_vision.GetSmoothedMask(results['crops'][i], _call_model_function,
-                                                                            call_model_args)
 
-                        results['vanilla'].append(pathvision.VisualizeImageGrayscale(vanilla_mask_3d))
-                        results['smoothgrad'].append(pathvision.VisualizeImageGrayscale(smoothgrad_mask_3d))
+                        if gradient_technique == "VanillaGradients":
+                            vanilla_mask_3d = vanilla_vision.GetMask(results['crops'][i], _call_model_function,
+                                                                     call_model_args)
+                            results['vanilla']['mask_3d'] = vanilla_mask_3d
+                            results['vanilla']['grayscale_2d'].append(pathvision.VisualizeImage(image_3d=vanilla_mask_3d))
+                            results['vanilla']['heatmap_3d'].append(pathvision.VisualizeImage(image_3d=vanilla_mask_3d, heatmap=True))
+
+                        elif gradient_technique == "Smoothgrad":
+                            smoothgrad_mask_3d = vanilla_vision.GetSmoothedMask(results['crops'][i], _call_model_function,
+                                                                                call_model_args)
+                            results['smoothgrad']['mask_3d'] = smoothgrad_mask_3d
+                            results['smoothgrad']['grayscale_2d'].append(pathvision.VisualizeImage(smoothgrad_mask_3d))
+                            results['smoothgrad']['heatmap_3d'].append(pathvision.VisualizeImage(image_3d=smoothgrad_mask_3d, heatmap=True))
+
                         LOGGER.info("Completed image {} of {}".format(frames.index(frame)+1, len(frames)+1))
                         LOGGER.info("Saving to disk")
-                        # Saving to disk
-                        for i in range(len(results['smoothgrad'])):
-                            savetxt('pathvision/test/numpys/vanilla/vanilla-{}.csv'.format(i), results['vanilla'][i],
-                                    delimiter=',')
-                            savetxt('pathvision/test/numpys/smoothgrad/smoothgrad-{}.csv'.format(i),
-                                    results['smoothgrad'][i], delimiter=',')
+
+                        '''
+                        Checking that we have the same number of gradients in each category.
+                        '''
+
+                        vanilla_lengths = [len(results['vanilla_gradients'][key]) for key in
+                                           ['heatmap_3d', 'mask_3d', 'grayscale_2d']]
+                        smoothgrad_lengths = [len(results['smoothgrad'][key]) for key in
+                                              ['heatmap_3d', 'mask_3d', 'grayscale_2d']]
+
+                        if not all(len_list == vanilla_lengths[0] for len_list in vanilla_lengths) and \
+                                all(len_list == smoothgrad_lengths[0] for len_list in smoothgrad_lengths):
+                            raise RuntimeError(PARAMETER_ERROR_MESSAGE['UNEQUAL_GRADIENT_COUNT'])
+                    '''
+                    DEBUG ONLY
+                    - Once we've calculated the gradients and added them to the dict, we can save them to disk for convenience
+                    '''
+                    if gradient_technique == "Vanilla Gradients":
+                        for i in range(len(results['crops'])):
+                            np.save('pathvision/test/outs/vanilla/grayscale/grayscale_image{}.npy'.format(i),
+                                    results['vanilla']['grayscale_2d'][i])
+                            np.save('pathvision/test/outs/vanilla/heatmap/heatmap_image{}.npy'.format(i),
+                                    results['vanilla']['heatmap_3d'][i])
+
+                    elif gradient_technique == "Smoothgrad":
+                        for i in range(len(results['crops'])):
+                            np.save('pathvision/test/outs/smoothgrad/graysale/grayscale_image{}.npy'.format(i),
+                                    results['smoothgrad']['grayscale_2d'][i])
+                            np.save('pathvision/test/outs/smoothgrad/heatmap/heatmap_image{}.npy'.format(i),
+                                    results['smoothgrad']['heatmap_3d'][i])
                 else:
                     LOGGER.info("Loading gradients from disk")
-                    # Define the folder paths
-                    vanilla_folder = 'pathvision/test/numpys/vanilla/'
-                    smoothgrad_folder = 'pathvision/test/numpys/smoothgrad/'
 
+                    folder = folder_dict.get(gradient_technique)
                     # Loop through the files in the folder and load the numpy arrays
-                    for filename in os.listdir(vanilla_folder):
-                        if filename.endswith('.csv'):
-                            vanilla_arr = np.loadtxt(os.path.join(vanilla_folder, filename), delimiter=',')
-                            results['vanilla'].append(vanilla_arr)
+                    for i, filename in enumerate([f for f in os.listdir(folder + "grayscale/") if f.endswith('.npy')]):
+                        np_arr = np.load(os.path.join(folder,'grayscale/grayscale_image{}.npy'.format(i)))
+                        results[technique_key]['grayscale_2d'].append(np_arr)
+                    for i, filename in enumerate([f for f in os.listdir(folder + "heatmap/") if f.endswith('.npy')]):
+                        np_arr = np.load(os.path.join(folder,'heatmap/heatmap_image{}.npy'.format(i)))
+                        results[technique_key]['heatmap_3d'].append(np_arr)
 
-                    for filename in os.listdir(smoothgrad_folder):
-                        if filename.endswith('.csv'):
-                            smoothgrad_arr = np.loadtxt(os.path.join(smoothgrad_folder, filename), delimiter=',')
-                            results['smoothgrad'].append(smoothgrad_arr)
+                    print(results[technique_key]['grayscale_2d'])
 
                 if segmentation_technique == "Panoptic Deeplab":
                     cfg = get_cfg()
@@ -357,7 +409,7 @@ class ObjectDetection(CorePathvision):
                         model_zoo.get_config_file("COCO-PanopticSegmentation/panoptic_fpn_R_50_3x.yaml"))
                     cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.5  # set threshold for this model
                     # Find a model from detectron2's model zoo. You can use the https://dl.fbaipublicfiles... url as well
-                    cfg.MODEL.DEVICE = 'cpu'
+                    cfg.MODEL.DEVICE = 'cuda' if device.type == 'cuda' else 'cpu'
                     cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url(
                         "COCO-PanopticSegmentation/panoptic_fpn_R_50_3x.yaml")
                     predictor = DefaultPredictor(cfg)
@@ -372,15 +424,15 @@ class ObjectDetection(CorePathvision):
                     masked_regions = []
 
                     original_image = to_pil(results['origin'][0])
-
+                    print(len(masks))
                     # Loop through the masks and save each one as a separate image
                     for i, mask in enumerate(masks):
                         # Convert the binary mask to a uint8 image (0s and 255s)
                         mask = np.uint8(mask * 255)
                         # Apply a bitwise-and operation to the original image to extract the masked region
                         original_base_image = Image.new("L", results['size'], 0)
-
-                        smoothgrad_arr = ((results['smoothgrad'][i] * 10.0) * 255).astype(np.uint8)
+                        # Smoothgrad isn't being appended :)
+                        smoothgrad_arr = results[technique_key]['grayscale_2d'][i] * 10.0
 
                         original_base_image.paste(TF.to_pil_image(smoothgrad_arr), results['coords'][i])
 
