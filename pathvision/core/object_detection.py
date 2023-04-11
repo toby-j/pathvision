@@ -294,7 +294,7 @@ class ObjectDetection(CorePathvision):
                 pre, annot_labels = _pre_process_model_output(preds=od_preds, coco=coco)
 
                 results = {
-                    "origin": None,
+                    "origin": im_pil,
                     "crops": [],
                     "crops_on_origin": [],
                     "coords": [],
@@ -322,7 +322,7 @@ class ObjectDetection(CorePathvision):
                 '''
                 # Get the size of the original image as our background canvas
                 results['size'] = tuple(reversed(im_tensor[0].shape[-2:]))
-                results['origin'] = im_tensor[0]
+                results['origin'] = im_pil
                 for i in range(len(pre[0]['labels'])):
                     cropped_image, bb_coords = _crop_frame(im_tensor, pre[0]['boxes'][i].tolist())
                     results['crops'].append(_load_image_arr(pil_img=cropped_image))
@@ -400,8 +400,6 @@ class ObjectDetection(CorePathvision):
                         np_arr = np.load(os.path.join(folder,'heatmap/heatmap_image{}.npy'.format(i)))
                         results[technique_key]['heatmap_3d'].append(np_arr)
 
-                    print(results[technique_key]['grayscale_2d'])
-
                 if segmentation_technique == "Panoptic Deeplab":
                     cfg = get_cfg()
                     # add project-specific config (e.g., TensorMask) here if you're not running a model in detectron2's core library
@@ -423,62 +421,58 @@ class ObjectDetection(CorePathvision):
                     overlapping_pixels_list = []
                     masked_regions = []
 
-                    original_image = to_pil(results['origin'][0])
-                    print(len(masks))
+                    original_image = results['origin']
                     # Loop through the masks and save each one as a separate image
+
                     for i, mask in enumerate(masks):
                         # Convert the binary mask to a uint8 image (0s and 255s)
                         mask = np.uint8(mask * 255)
                         # Apply a bitwise-and operation to the original image to extract the masked region
-                        original_base_image = Image.new("L", results['size'], 0)
-                        # Smoothgrad isn't being appended :)
-                        smoothgrad_arr = results[technique_key]['grayscale_2d'][i] * 10.0
+                        original_base_image = Image.new("RGBA", results['size'], 0)
+
+                        smoothgrad_arr = (results[technique_key]['heatmap_3d'][i] * 10.0).astype(np.uint8)
 
                         original_base_image.paste(TF.to_pil_image(smoothgrad_arr), results['coords'][i])
 
-                        # Resize the smoothgrad gradients to match the size of the mask
-                        # smoothed_gradients = cv2.resize(results['smoothgrad'][i], (results['size']))
+                        print(im_arr.shape)
 
+                        # Extract the masked region from the main image.
                         masked_region = cv2.bitwise_and(im_arr[:, :, ::-1], im_arr[:, :, ::-1], mask=mask)
 
-                        # Apply the binary mask to the resized gradients to keep only the gradients that overlap with the segment
-                        masked_gradients = cv2.bitwise_and(_load_image_arr(pil_img=original_base_image),
-                                                           _load_image_arr(pil_img=original_base_image), mask=mask)
+                        im_arr = _load_image_arr(pil_img=original_base_image)
+                        im_bgr = cv2.cvtColor(im_arr, cv2.COLOR_BGR2BGRA)
 
-                        # Create a copy of the masked region to show the overlapping pixels in red
-                        overlapping_pixels = masked_region.copy()
 
-                        # Set the values of the overlapping pixels to red
-                        overlapping_pixels[..., 0] += masked_gradients.astype(overlapping_pixels.dtype)
+                        # Apply the binary mask to the resized gradients to keep only the gradients that are within the segment
+                        masked_gradients = cv2.bitwise_and(im_bgr, im_bgr, mask=mask)
+
+                        # # # Create a copy of the masked region to show the overlapping pixels in red
+                        # overlapping_pixels = masked_region.copy()
+                        # #
+                        # # # Set the values of the overlapping pixels to red
+                        # overlapping_pixels[..., 0] += masked_gradients.astype(overlapping_pixels.dtype)
 
                         # Save the masked region and the masked gradients as separate images
                         masked_regions.append(masked_region)
                         masked_gradients_list.append(masked_gradients)
-                        overlapping_pixels_list.append(overlapping_pixels)
+                        # overlapping_pixels_list.append(overlapping_pixels)
 
-                    for i in masked_gradients_list:
-                        smoothgrad_array = (i - i.min()) / (i.max() - i.min())
+                    # Create a new transparent image with the size of the background image
+                    output_image = Image.new('RGBA', im_pil.size, (0, 0, 0, 0))
 
-                        smoothgrad_array = (smoothgrad_array * 255).astype(np.uint8)
+                    # Loop through each gradient mask
+                    for grad_mask in masked_gradients_list:
+                        # Overlay the gradient mask onto the transparent image
+                        grad_mask = to_pil(grad_mask).convert('RGBA')
+                        output_image.alpha_composite(grad_mask)
 
-                        smoothgrad_pil = Image.fromarray(smoothgrad_array, mode="L")
+                    # Paste the transparent image onto the background image
+                    im_pil = im_pil.convert('RGBA')
+                    im_pil.putalpha(255)
+                    result_image = im_pil.copy()
+                    result_image.paste(_reduce_opacity(output_image, 0.5), (0, 0), _reduce_opacity(output_image, 0.5))
 
-                        smoothgrad_with_alpha = Image.new("RGBA", smoothgrad_pil.size, (0, 0, 0, 0))
-
-                        smoothgrad_with_alpha.paste(smoothgrad_pil, (0, 0))
-
-                        smoothgrad_inverted = ImageOps.invert(smoothgrad_pil)
-
-                        threshold = 200
-
-                        alpha = smoothgrad_inverted.point(lambda x: 255 if x < threshold else 0)
-
-                        smoothgrad_with_alpha.putalpha(alpha)
-
-                        original_image.paste(im=_reduce_opacity(smoothgrad_with_alpha, 0.5),
-                                             mask=_reduce_opacity(smoothgrad_with_alpha, 0.5))
-                    return original_image
-
+                    return result_image
 
         else:
             raise ValueError(PARAMETER_ERROR_MESSAGE['NO_MODEL'])

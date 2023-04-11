@@ -29,6 +29,7 @@ def VisualizeImage(image_3d, percentile=99, heatmap=False):
     image_2d = np.clip((image_2d - vmin) / (vmax - vmin), 0, 1)
     if heatmap:
         # Create heatmap using "jet" colormap
+
         heatmap = plt.get_cmap('jet')(image_2d)
 
         # Convert heatmap to RGB image

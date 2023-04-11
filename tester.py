@@ -14,7 +14,7 @@ def tester():
     image = od.ProcessFrames(frames=frames, labels="COCO", gradient_technique="Smoothgrad",
                                              trajectory_technique="KalmanFilter", segmentation_technique="Panoptic Deeplab",
                                              pre_trained_model="fasterrcnn_resnet50_fpn", model=None, threshold=None, LoadFromDisk=True, log=True)
-    image.save('pathvision/test/result_images/output4.jpg')
+    image.save('pathvision/test/result_images/output4.png')
 
 
 if __name__ == "__main__":
