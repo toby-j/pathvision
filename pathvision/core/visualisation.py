@@ -33,7 +33,7 @@ def VisualizeImage(image_3d, percentile=99, heatmap=False):
         heatmap = plt.get_cmap('jet')(image_2d)
 
         # Convert heatmap to RGB image
-        heatmap_rgb = np.delete(heatmap, 3, 2) * 255
+        heatmap_rgb = np.delete(heatmap, 3, 2)
 
         return heatmap_rgb.astype(np.uint8)
     else:

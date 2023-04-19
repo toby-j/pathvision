@@ -430,7 +430,16 @@ class ObjectDetection(CorePathvision):
                         # Apply a bitwise-and operation to the original image to extract the masked region
                         original_base_image = Image.new("RGBA", results['size'], 0)
 
-                        smoothgrad_arr = (results[technique_key]['heatmap_3d'][i] * 10.0).astype(np.uint8)
+
+                        smoothgrad_arr = (results[technique_key]['heatmap_3d'][i])
+
+                        # The heatmap is 1.0 - 0 and comes normalised, so we'll apply the threshold now.
+
+                        # heatmap is still not normalised for some reason
+
+                        # alpha = np.sum(smoothgrad_arr, axis=-1)
+                        # alpha = np.uint8(alpha * 255)
+                        # smoothgrad_arr = np.dstack((smoothgrad_arr, alpha))
 
                         original_base_image.paste(TF.to_pil_image(smoothgrad_arr), results['coords'][i])
 
@@ -438,6 +447,7 @@ class ObjectDetection(CorePathvision):
 
                         # Extract the masked region from the main image.
                         masked_region = cv2.bitwise_and(im_arr[:, :, ::-1], im_arr[:, :, ::-1], mask=mask)
+
 
                         im_arr = _load_image_arr(pil_img=original_base_image)
                         im_bgr = cv2.cvtColor(im_arr, cv2.COLOR_BGR2BGRA)
@@ -470,7 +480,7 @@ class ObjectDetection(CorePathvision):
                     im_pil = im_pil.convert('RGBA')
                     im_pil.putalpha(255)
                     result_image = im_pil.copy()
-                    result_image.paste(_reduce_opacity(output_image, 0.5), (0, 0), _reduce_opacity(output_image, 0.5))
+                    result_image.paste(_reduce_opacity(output_image, 1), (0, 0), _reduce_opacity(output_image, 1))
 
                     return result_image
 
