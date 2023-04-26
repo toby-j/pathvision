@@ -28,7 +28,7 @@ name: Push to Amazon ECR
 
 on:
   push:
-    branches: [ "containerU" ]
+    branches: [ "container" ]
 
 env:
   AWS_REGION: eu-west-2                   # set this to your preferred AWS region, e.g. us-west-1
