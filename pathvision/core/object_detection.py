@@ -430,7 +430,6 @@ class ObjectDetection(CorePathvision):
                         # Apply a bitwise-and operation to the original image to extract the masked region
                         original_base_image = Image.new("RGBA", results['size'], 0)
 
-
                         smoothgrad_arr = (results[technique_key]['heatmap_3d'][i])
 
                         # The heatmap is 1.0 - 0 and comes normalised, so we'll apply the threshold now.
