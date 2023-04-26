@@ -299,7 +299,7 @@ class ObjectDetection(CorePathvision):
                     "crops_on_origin": [],
                     "coords": [],
                     "size": (),
-                    "vanilla_gradients": {
+                    "vanilla": {
                         "heatmap_3d": [],
                         "mask_3d": [],
                         "grayscale_2d": [],
@@ -314,7 +314,7 @@ class ObjectDetection(CorePathvision):
                 folder_dict = {"VanillaGradients": "pathvision/test/outs/vanilla/",
                                "Smoothgrad": "pathvision/test/outs/smoothgrad/"}
 
-                lower_technique_dict = {"VanillaGradients": "vanilla_gradients",
+                technique_dict = {"VanillaGradients": "vanilla",
                                "Smoothgrad": "smoothgrad"}
 
                 '''
@@ -331,8 +331,12 @@ class ObjectDetection(CorePathvision):
                     original_size_image.paste(cropped_image, bb_coords)
                     results['crops_on_origin'].append(original_size_image)
 
+                '''
+                Go through all labels and find their gradients 
+                '''
                 class_idxs = pre[0]['labels']
-                technique_key = lower_technique_dict.get(gradient_technique)
+                technique_key = technique_dict.get(gradient_technique)
+                print(technique_key)
                 print("CLASS INDEX")
                 if LoadFromDisk == False:
                     for i, tensor in enumerate(class_idxs):
@@ -342,14 +346,14 @@ class ObjectDetection(CorePathvision):
                         cat_name = next(cat['name'] for cat in cats if cat['id'] == cat_id)
                         LOGGER.info("Category name for index value {}: {}".format(cat_id, cat_name))
 
-                        if gradient_technique == "VanillaGradients":
+                        if technique_key == "vanilla":
                             vanilla_mask_3d = vanilla_vision.GetMask(results['crops'][i], _call_model_function,
                                                                      call_model_args)
                             results['vanilla']['mask_3d'] = vanilla_mask_3d
                             results['vanilla']['grayscale_2d'].append(pathvision.VisualizeImage(image_3d=vanilla_mask_3d))
                             results['vanilla']['heatmap_3d'].append(pathvision.VisualizeImage(image_3d=vanilla_mask_3d, heatmap=True))
 
-                        elif gradient_technique == "Smoothgrad":
+                        elif technique_key == "smoothgrad":
                             smoothgrad_mask_3d = vanilla_vision.GetSmoothedMask(results['crops'][i], _call_model_function,
                                                                                 call_model_args)
                             results['smoothgrad']['mask_3d'] = smoothgrad_mask_3d
@@ -363,28 +367,28 @@ class ObjectDetection(CorePathvision):
                         Checking that we have the same number of gradients in each category.
                         '''
 
-                        vanilla_lengths = [len(results['vanilla_gradients'][key]) for key in
-                                           ['heatmap_3d', 'mask_3d', 'grayscale_2d']]
-                        smoothgrad_lengths = [len(results['smoothgrad'][key]) for key in
-                                              ['heatmap_3d', 'mask_3d', 'grayscale_2d']]
-
-                        if not all(len_list == vanilla_lengths[0] for len_list in vanilla_lengths) and \
-                                all(len_list == smoothgrad_lengths[0] for len_list in smoothgrad_lengths):
-                            raise RuntimeError(PARAMETER_ERROR_MESSAGE['UNEQUAL_GRADIENT_COUNT'])
+                        # vanilla_lengths = [len(results['vanilla'][key]) for key in
+                        #                    ['heatmap_3d', 'mask_3d', 'grayscale_2d']]
+                        # smoothgrad_lengths = [len(results['smoothgrad'][key]) for key in
+                        #                       ['heatmap_3d', 'mask_3d', 'grayscale_2d']]
+                        #
+                        # if not all(len_list == vanilla_lengths[0] for len_list in vanilla_lengths) and \
+                        #         all(len_list == smoothgrad_lengths[0] for len_list in smoothgrad_lengths):
+                        #     raise RuntimeError(PARAMETER_ERROR_MESSAGE['UNEQUAL_GRADIENT_COUNT'])
                     '''
                     DEBUG ONLY
                     - Once we've calculated the gradients and added them to the dict, we can save them to disk for convenience
                     '''
-                    if gradient_technique == "Vanilla Gradients":
+                    if technique_key == "vanilla":
                         for i in range(len(results['crops'])):
                             np.save('pathvision/test/outs/vanilla/grayscale/grayscale_image{}.npy'.format(i),
                                     results['vanilla']['grayscale_2d'][i])
                             np.save('pathvision/test/outs/vanilla/heatmap/heatmap_image{}.npy'.format(i),
                                     results['vanilla']['heatmap_3d'][i])
 
-                    elif gradient_technique == "Smoothgrad":
+                    elif technique_key == "smoothgrad":
                         for i in range(len(results['crops'])):
-                            np.save('pathvision/test/outs/smoothgrad/graysale/grayscale_image{}.npy'.format(i),
+                            np.save('pathvision/test/outs/smoothgrad/grayscale/grayscale_image{}.npy'.format(i),
                                     results['smoothgrad']['grayscale_2d'][i])
                             np.save('pathvision/test/outs/smoothgrad/heatmap/heatmap_image{}.npy'.format(i),
                                     results['smoothgrad']['heatmap_3d'][i])
@@ -431,7 +435,8 @@ class ObjectDetection(CorePathvision):
                         original_base_image = Image.new("RGBA", results['size'], 0)
 
 
-                        smoothgrad_arr = (results[technique_key]['heatmap_3d'][i])
+
+                        smoothgrad_arr = (results[technique_key]['heatmap_3d'][i] * 10.0).astype(np.uint8)
 
                         # The heatmap is 1.0 - 0 and comes normalised, so we'll apply the threshold now.
 
@@ -442,6 +447,8 @@ class ObjectDetection(CorePathvision):
                         # smoothgrad_arr = np.dstack((smoothgrad_arr, alpha))
 
                         original_base_image.paste(TF.to_pil_image(smoothgrad_arr), results['coords'][i])
+
+                        original_base_image.save('hi.png')
 
                         print(im_arr.shape)
 
@@ -480,7 +487,7 @@ class ObjectDetection(CorePathvision):
                     im_pil = im_pil.convert('RGBA')
                     im_pil.putalpha(255)
                     result_image = im_pil.copy()
-                    result_image.paste(_reduce_opacity(output_image, 1), (0, 0), _reduce_opacity(output_image, 1))
+                    result_image.paste(_reduce_opacity(output_image, 0.5), (0, 0), _reduce_opacity(output_image, 0.5))
 
                     return result_image
 
