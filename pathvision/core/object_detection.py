@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import sys
+import time
 
 import PIL
 import cv2
@@ -128,7 +129,8 @@ def _load_image_arr(file_path='', pil_img=None):
     elif pil_img:
         im = pil_img
     else:
-        raise Exception("Unable to convert image to array")
+        LOGGER.critical("Unable to convert image to array")
+        raise Exception
     im = np.asarray(im)
     return im
 
@@ -302,13 +304,12 @@ class ObjectDetection(CorePathvision):
                     "vanilla": {
                         "heatmap_3d": [],
                         "mask_3d": [],
-                        "grayscale_2d": [],
                     },
-                    'smoothgrad': {
+                    "smoothgrad": {
                         "heatmap_3d": [],
                         "mask_3d": [],
-                        "grayscale_2d": [],
                     },
+
                 }
 
                 folder_dict = {"VanillaGradients": "pathvision/test/outs/vanilla/",
@@ -366,7 +367,6 @@ class ObjectDetection(CorePathvision):
                         '''
                         Checking that we have the same number of gradients in each category.
                         '''
-
                         # vanilla_lengths = [len(results['vanilla'][key]) for key in
                         #                    ['heatmap_3d', 'mask_3d', 'grayscale_2d']]
                         # smoothgrad_lengths = [len(results['smoothgrad'][key]) for key in
@@ -422,7 +422,7 @@ class ObjectDetection(CorePathvision):
                     masks = instances.pred_masks.numpy()
 
                     masked_gradients_list = []
-                    overlapping_pixels_list = []
+                    overlap_pixels_list = []
                     masked_regions = []
 
                     original_image = results['origin']
@@ -433,46 +433,47 @@ class ObjectDetection(CorePathvision):
                         mask = np.uint8(mask * 255)
                         # Apply a bitwise-and operation to the original image to extract the masked region
                         original_base_image = Image.new("RGBA", results['size'], 0)
-
-
-
-                        smoothgrad_arr = (results[technique_key]['heatmap_3d'][i] * 10.0).astype(np.uint8)
-
-                        # The heatmap is 1.0 - 0 and comes normalised, so we'll apply the threshold now.
-
-                        # heatmap is still not normalised for some reason
-
-                        # alpha = np.sum(smoothgrad_arr, axis=-1)
-                        # alpha = np.uint8(alpha * 255)
-                        # smoothgrad_arr = np.dstack((smoothgrad_arr, alpha))
-
+                        smoothgrad_arr = results[technique_key]['heatmap_3d'][i]
                         original_base_image.paste(TF.to_pil_image(smoothgrad_arr), results['coords'][i])
 
-                        original_base_image.save('hi.png')
+                        # We sum all the gradient values together. We can then use this to find what percentage is within the segment
+                        total_pixel_sum = np.sum(_load_image_arr(pil_img=original_base_image), axis=2)
+                        total_pixel_weight = np.sum(total_pixel_sum)
 
-                        print(im_arr.shape)
+                        LOGGER.info("Total gradient sum {}".format(total_pixel_weight))
 
                         # Extract the masked region from the main image.
                         masked_region = cv2.bitwise_and(im_arr[:, :, ::-1], im_arr[:, :, ::-1], mask=mask)
 
-
                         im_arr = _load_image_arr(pil_img=original_base_image)
                         im_bgr = cv2.cvtColor(im_arr, cv2.COLOR_BGR2BGRA)
 
+                        cv2.imwrite("im_bgr_{}.png".format(time.time()), im_bgr)
 
                         # Apply the binary mask to the resized gradients to keep only the gradients that are within the segment
                         masked_gradients = cv2.bitwise_and(im_bgr, im_bgr, mask=mask)
 
-                        # # # Create a copy of the masked region to show the overlapping pixels in red
-                        # overlapping_pixels = masked_region.copy()
-                        # #
-                        # # # Set the values of the overlapping pixels to red
-                        # overlapping_pixels[..., 0] += masked_gradients.astype(overlapping_pixels.dtype)
+                        cv2.imwrite("masked_{}.png".format(time.time()), masked_gradients)
+
+                        masked_pixel_sum = np.sum(masked_gradients, axis=2)
+                        masked_pixel_weight = np.sum(masked_pixel_sum)
+                        overlap_pixel_sum = total_pixel_weight - masked_pixel_weight
+                        overlap_pixel_weight = (overlap_pixel_sum / total_pixel_weight) * 100
+
+                        LOGGER.info("Percentage of overlap: {}".format(overlap_pixel_weight))
+
+                        overlap_pixels = cv2.bitwise_and(im_bgr, im_bgr, mask=cv2.bitwise_not(mask))
+
+                        cv2.imwrite("overlap_pixels_{}.png".format(time.time()), overlap_pixels)
 
                         # Save the masked region and the masked gradients as separate images
+
                         masked_regions.append(masked_region)
                         masked_gradients_list.append(masked_gradients)
-                        # overlapping_pixels_list.append(overlapping_pixels)
+                        overlap_pixels_list.append(overlap_pixels)
+
+                        # Now that we've made the crops, we can reduce the noise for the output image.
+
 
                     # Create a new transparent image with the size of the background image
                     output_image = Image.new('RGBA', im_pil.size, (0, 0, 0, 0))
@@ -482,12 +483,13 @@ class ObjectDetection(CorePathvision):
                         # Overlay the gradient mask onto the transparent image
                         grad_mask = to_pil(grad_mask).convert('RGBA')
                         output_image.alpha_composite(grad_mask)
+                        output_image.save("output_image {}.png".format(time.time()))
 
                     # Paste the transparent image onto the background image
                     im_pil = im_pil.convert('RGBA')
                     im_pil.putalpha(255)
                     result_image = im_pil.copy()
-                    result_image.paste(_reduce_opacity(output_image, 0.5), (0, 0), _reduce_opacity(output_image, 0.5))
+                    result_image.paste(_reduce_opacity(output_image, 0.7), (0, 0), _reduce_opacity(output_image, 0.7))
 
                     return result_image
 

@@ -25,16 +25,19 @@ def VisualizeImage(image_3d, percentile=99, heatmap=False):
   """
     image_2d = np.sum(np.abs(image_3d), axis=2)
 
+    # Get max pixel value in the image
     vmax = np.percentile(image_2d, percentile)
+    # Get minimum pixel value in the image
     vmin = np.min(image_2d)
+    # Normalise the values. We clip intensities so values lower than 0 are equal 0.
     image_2d = np.clip((image_2d - vmin) / (vmax - vmin), 0, 1)
     if heatmap:
-        # Create heatmap using "jet" colormap
 
+        # Create heatmap using "jet" colormap, which returns an RGBA image
         heatmap = plt.get_cmap('jet')(image_2d)
 
-        # Convert heatmap to RGB image
-        heatmap_rgb = np.delete(heatmap, 3, 2) * 255
+        # Convert heatmap to RGB image to support PIL .paste() as it doesn't support RGBA
+        heatmap_rgb = np.delete(heatmap, 3, 2)
 
         return heatmap_rgb.astype(np.uint8)
     else:
