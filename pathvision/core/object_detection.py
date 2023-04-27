@@ -168,7 +168,7 @@ class ObjectDetection(CorePathvision):
                       segmentation_technique=None,
                       pre_trained_model=None
                       , model=None,
-                      threshold=None,LoadFromDisk=False, log=False):
+                      threshold=None,LoadFromDisk=False, log=False, debug=False):
 
         """Detects the objects in the frames. Uses trajectory prediction to find frames with errors. If errors are found,
         segmentation technique and the gradient technique are used on the frames to attempt to uncover the reason for the error.
@@ -302,14 +302,33 @@ class ObjectDetection(CorePathvision):
                     "coords": [],
                     "size": (),
                     "vanilla": {
-                        "heatmap_3d": [],
-                        "mask_3d": [],
+                        "gradients": {
+                            "heatmap_3d": [],
+                            "mask_3d": [],
+                        },
+                        "result_images": {
+                            "full": [],
+                            "overlap": [],
+                            "internal": [],
+                        },
+                        "metrics": {
+                            "overlap_ps": 0
+                        }
                     },
                     "smoothgrad": {
-                        "heatmap_3d": [],
-                        "mask_3d": [],
+                        "gradients": {
+                            "heatmap_3d": [],
+                            "mask_3d": [],
+                        },
+                        "result_images": {
+                            "full": [],
+                            "overlap": [],
+                            "internal": [],
+                        },
+                        "metrics": {
+                            "overlap_ps": 0
+                        }
                     },
-
                 }
 
                 folder_dict = {"VanillaGradients": "pathvision/test/outs/vanilla/",
@@ -350,16 +369,14 @@ class ObjectDetection(CorePathvision):
                         if technique_key == "vanilla":
                             vanilla_mask_3d = vanilla_vision.GetMask(results['crops'][i], _call_model_function,
                                                                      call_model_args)
-                            results['vanilla']['mask_3d'] = vanilla_mask_3d
-                            results['vanilla']['grayscale_2d'].append(pathvision.VisualizeImage(image_3d=vanilla_mask_3d))
-                            results['vanilla']['heatmap_3d'].append(pathvision.VisualizeImage(image_3d=vanilla_mask_3d, heatmap=True))
+                            results['vanilla']['gradients']['mask_3d'] = vanilla_mask_3d
+                            results['vanilla']['gradients']['heatmap_3d'].append(pathvision.VisualizeImage(image_3d=vanilla_mask_3d))
 
                         elif technique_key == "smoothgrad":
                             smoothgrad_mask_3d = vanilla_vision.GetSmoothedMask(results['crops'][i], _call_model_function,
                                                                                 call_model_args)
-                            results['smoothgrad']['mask_3d'] = smoothgrad_mask_3d
-                            results['smoothgrad']['grayscale_2d'].append(pathvision.VisualizeImage(smoothgrad_mask_3d))
-                            results['smoothgrad']['heatmap_3d'].append(pathvision.VisualizeImage(image_3d=smoothgrad_mask_3d, heatmap=True))
+                            results['smoothgrad']['gradients']['mask_3d'] = smoothgrad_mask_3d
+                            results['smoothgrad']['gradients']['heatmap_3d'].append(pathvision.VisualizeImage(image_3d=smoothgrad_mask_3d))
 
                         LOGGER.info("Completed image {} of {}".format(frames.index(frame)+1, len(frames)+1))
                         LOGGER.info("Saving to disk")
@@ -367,14 +384,14 @@ class ObjectDetection(CorePathvision):
                         '''
                         Checking that we have the same number of gradients in each category.
                         '''
-                        # vanilla_lengths = [len(results['vanilla'][key]) for key in
-                        #                    ['heatmap_3d', 'mask_3d', 'grayscale_2d']]
-                        # smoothgrad_lengths = [len(results['smoothgrad'][key]) for key in
-                        #                       ['heatmap_3d', 'mask_3d', 'grayscale_2d']]
-                        #
-                        # if not all(len_list == vanilla_lengths[0] for len_list in vanilla_lengths) and \
-                        #         all(len_list == smoothgrad_lengths[0] for len_list in smoothgrad_lengths):
-                        #     raise RuntimeError(PARAMETER_ERROR_MESSAGE['UNEQUAL_GRADIENT_COUNT'])
+                        vanilla_lengths = [len(results['vanilla']['gradients'][key]) for key in
+                                           ['heatmap_3d', 'mask_3d']]
+                        smoothgrad_lengths = [len(results['smoothgrad']['gradients'][key]) for key in
+                                              ['heatmap_3d', 'mask_3d']]
+
+                        if not all(len_list == vanilla_lengths[0] for len_list in vanilla_lengths) and \
+                                all(len_list == smoothgrad_lengths[0] for len_list in smoothgrad_lengths):
+                            raise RuntimeError(PARAMETER_ERROR_MESSAGE['UNEQUAL_GRADIENT_COUNT'])
                     '''
                     DEBUG ONLY
                     - Once we've calculated the gradients and added them to the dict, we can save them to disk for convenience
@@ -382,27 +399,24 @@ class ObjectDetection(CorePathvision):
                     if technique_key == "vanilla":
                         for i in range(len(results['crops'])):
                             np.save('pathvision/test/outs/vanilla/grayscale/grayscale_image{}.npy'.format(i),
-                                    results['vanilla']['grayscale_2d'][i])
+                                    results['vanilla']['gradients']['grayscale_2d'][i])
                             np.save('pathvision/test/outs/vanilla/heatmap/heatmap_image{}.npy'.format(i),
-                                    results['vanilla']['heatmap_3d'][i])
+                                    results['vanilla']['gradients']['heatmap_3d'][i])
 
                     elif technique_key == "smoothgrad":
                         for i in range(len(results['crops'])):
                             np.save('pathvision/test/outs/smoothgrad/grayscale/grayscale_image{}.npy'.format(i),
-                                    results['smoothgrad']['grayscale_2d'][i])
+                                    results['smoothgrad']['gradients']['grayscale_2d'][i])
                             np.save('pathvision/test/outs/smoothgrad/heatmap/heatmap_image{}.npy'.format(i),
-                                    results['smoothgrad']['heatmap_3d'][i])
+                                    results['smoothgrad']['gradients']['heatmap_3d'][i])
                 else:
                     LOGGER.info("Loading gradients from disk")
 
                     folder = folder_dict.get(gradient_technique)
                     # Loop through the files in the folder and load the numpy arrays
-                    for i, filename in enumerate([f for f in os.listdir(folder + "grayscale/") if f.endswith('.npy')]):
-                        np_arr = np.load(os.path.join(folder,'grayscale/grayscale_image{}.npy'.format(i)))
-                        results[technique_key]['grayscale_2d'].append(np_arr)
                     for i, filename in enumerate([f for f in os.listdir(folder + "heatmap/") if f.endswith('.npy')]):
                         np_arr = np.load(os.path.join(folder,'heatmap/heatmap_image{}.npy'.format(i)))
-                        results[technique_key]['heatmap_3d'].append(np_arr)
+                        results[technique_key]['gradients']['heatmap_3d'].append(np_arr)
 
                 if segmentation_technique == "Panoptic Deeplab":
                     cfg = get_cfg()
@@ -433,14 +447,8 @@ class ObjectDetection(CorePathvision):
                         mask = np.uint8(mask * 255)
                         # Apply a bitwise-and operation to the original image to extract the masked region
                         original_base_image = Image.new("RGBA", results['size'], 0)
-                        smoothgrad_arr = results[technique_key]['heatmap_3d'][i]
+                        smoothgrad_arr = results[technique_key]['gradients']['heatmap_3d'][i]
                         original_base_image.paste(TF.to_pil_image(smoothgrad_arr), results['coords'][i])
-
-                        # We sum all the gradient values together. We can then use this to find what percentage is within the segment
-                        total_pixel_sum = np.sum(_load_image_arr(pil_img=original_base_image), axis=2)
-                        total_pixel_weight = np.sum(total_pixel_sum)
-
-                        LOGGER.info("Total gradient sum {}".format(total_pixel_weight))
 
                         # Extract the masked region from the main image.
                         masked_region = cv2.bitwise_and(im_arr[:, :, ::-1], im_arr[:, :, ::-1], mask=mask)
@@ -448,23 +456,31 @@ class ObjectDetection(CorePathvision):
                         im_arr = _load_image_arr(pil_img=original_base_image)
                         im_bgr = cv2.cvtColor(im_arr, cv2.COLOR_BGR2BGRA)
 
-                        cv2.imwrite("im_bgr_{}.png".format(time.time()), im_bgr)
-
                         # Apply the binary mask to the resized gradients to keep only the gradients that are within the segment
                         masked_gradients = cv2.bitwise_and(im_bgr, im_bgr, mask=mask)
 
-                        cv2.imwrite("masked_{}.png".format(time.time()), masked_gradients)
 
+                        # Calculating percentage of overlap, first we get the total of smoothgrad over the whole mask
+                        total_pixel_sum = np.sum(_load_image_arr(pil_img=original_base_image), axis=2)
+                        total_pixel_weight = np.sum(total_pixel_sum)
+                        # Next calcualte the sum of the crop
                         masked_pixel_sum = np.sum(masked_gradients, axis=2)
                         masked_pixel_weight = np.sum(masked_pixel_sum)
+                        # Based on these numbers, calculate percentage of overlap
                         overlap_pixel_sum = total_pixel_weight - masked_pixel_weight
                         overlap_pixel_weight = (overlap_pixel_sum / total_pixel_weight) * 100
 
-                        LOGGER.info("Percentage of overlap: {}".format(overlap_pixel_weight))
+                        results['smoothgrad']['metrics']['overlap_ps'] = overlap_pixel_weight
 
                         overlap_pixels = cv2.bitwise_and(im_bgr, im_bgr, mask=cv2.bitwise_not(mask))
 
-                        cv2.imwrite("overlap_pixels_{}.png".format(time.time()), overlap_pixels)
+                        if debug:
+                            LOGGER.debug("Percentage of overlap: {}".format(overlap_pixel_weight))
+                            LOGGER.debug("Total gradient sum {}".format(total_pixel_weight))
+                            LOGGER.debug("Writing debug images")
+                            cv2.imwrite("debug/im_bgr_{}.png".format(time.time()), im_bgr)
+                            cv2.imwrite("debug/masked_{}.png".format(time.time()), masked_gradients)
+                            cv2.imwrite("debug/overlap_pixels_{}.png".format(time.time()), overlap_pixels)
 
                         # Save the masked region and the masked gradients as separate images
 
@@ -483,7 +499,8 @@ class ObjectDetection(CorePathvision):
                         # Overlay the gradient mask onto the transparent image
                         grad_mask = to_pil(grad_mask).convert('RGBA')
                         output_image.alpha_composite(grad_mask)
-                        output_image.save("output_image {}.png".format(time.time()))
+                        if debug:
+                            output_image.save("debug/output_image {}.png".format(time.time()))
 
                     # Paste the transparent image onto the background image
                     im_pil = im_pil.convert('RGBA')

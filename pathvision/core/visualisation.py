@@ -17,7 +17,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 from PIL import Image
 
-def VisualizeImage(image_3d, percentile=99, heatmap=False):
+def VisualizeImage(image_3d, percentile=99):
     r"""Returns a 3D tensor as a grayscale 2D tensor.
 
   This method sums a 3D tensor across the absolute value of axis=2, and then
@@ -31,17 +31,14 @@ def VisualizeImage(image_3d, percentile=99, heatmap=False):
     vmin = np.min(image_2d)
     # Normalise the values. We clip intensities so values lower than 0 are equal 0.
     image_2d = np.clip((image_2d - vmin) / (vmax - vmin), 0, 1)
-    if heatmap:
 
-        # Create heatmap using "jet" colormap, which returns an RGBA image
-        heatmap = plt.get_cmap('jet')(image_2d)
+    # Create heatmap using "jet" colormap, which returns an RGBA image
+    heatmap = plt.get_cmap('jet')(image_2d)
 
-        # Convert heatmap to RGB image to support PIL .paste() as it doesn't support RGBA
-        heatmap_rgb = np.delete(heatmap, 3, 2)
+    # Convert heatmap to RGB image to support PIL .paste() as it doesn't support RGBA
+    heatmap_rgb = np.delete(heatmap, 3, 2)
 
-        return heatmap_rgb.astype(np.uint8)
-    else:
-        return image_2d
+    return heatmap_rgb
 
 def VisualizeImageDiverging(image_3d, percentile=99):
     r"""Returns a 3D tensor as a 2D tensor with positive and negative values.
