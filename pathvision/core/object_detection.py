@@ -30,7 +30,7 @@ from detectron2 import model_zoo
 from detectron2.config import get_cfg
 from detectron2.engine import DefaultPredictor
 import pathvision.core as pathvision
-from pathvision.core.visualisation import VisualizeImage
+from pathvision.core.visualisation import VisualizeImageToHeatmap
 
 to_pil = ToPILImage()
 import torchvision.transforms.functional as TF
@@ -304,7 +304,6 @@ class ObjectDetection(CorePathvision):
                     "vanilla": {
                         "gradients": {
                             "heatmap_3d": [],
-                            "mask_3d": [],
                         },
                         "result_images": {
                             "full": [],
@@ -318,7 +317,6 @@ class ObjectDetection(CorePathvision):
                     "smoothgrad": {
                         "gradients": {
                             "heatmap_3d": [],
-                            "mask_3d": [],
                         },
                         "result_images": {
                             "full": [],
@@ -356,8 +354,7 @@ class ObjectDetection(CorePathvision):
                 '''
                 class_idxs = pre[0]['labels']
                 technique_key = technique_dict.get(gradient_technique)
-                print(technique_key)
-                print("CLASS INDEX")
+
                 if LoadFromDisk == False:
                     for i, tensor in enumerate(class_idxs):
                         call_model_args = {class_idx_str: tensor.item()}
@@ -369,14 +366,12 @@ class ObjectDetection(CorePathvision):
                         if technique_key == "vanilla":
                             vanilla_mask_3d = vanilla_vision.GetMask(results['crops'][i], _call_model_function,
                                                                      call_model_args)
-                            results['vanilla']['gradients']['mask_3d'] = vanilla_mask_3d
-                            results['vanilla']['gradients']['heatmap_3d'].append(pathvision.VisualizeImage(image_3d=vanilla_mask_3d))
+                            results['vanilla']['gradients']['heatmap_3d'].append(pathvision.VisualizeImageToHeatmap(image_3d=vanilla_mask_3d, heatmap=True))
 
                         elif technique_key == "smoothgrad":
                             smoothgrad_mask_3d = vanilla_vision.GetSmoothedMask(results['crops'][i], _call_model_function,
                                                                                 call_model_args)
-                            results['smoothgrad']['gradients']['mask_3d'] = smoothgrad_mask_3d
-                            results['smoothgrad']['gradients']['heatmap_3d'].append(pathvision.VisualizeImage(image_3d=smoothgrad_mask_3d))
+                            results['smoothgrad']['gradients']['heatmap_3d'].append(pathvision.VisualizeImageToHeatmap(image_3d=smoothgrad_mask_3d, heatmap=True))
 
                         LOGGER.info("Completed image {} of {}".format(frames.index(frame)+1, len(frames)+1))
                         LOGGER.info("Saving to disk")
@@ -385,9 +380,9 @@ class ObjectDetection(CorePathvision):
                         Checking that we have the same number of gradients in each category.
                         '''
                         vanilla_lengths = [len(results['vanilla']['gradients'][key]) for key in
-                                           ['heatmap_3d', 'mask_3d']]
+                                           ['heatmap_3d']]
                         smoothgrad_lengths = [len(results['smoothgrad']['gradients'][key]) for key in
-                                              ['heatmap_3d', 'mask_3d']]
+                                              ['heatmap_3d']]
 
                         if not all(len_list == vanilla_lengths[0] for len_list in vanilla_lengths) and \
                                 all(len_list == smoothgrad_lengths[0] for len_list in smoothgrad_lengths):
@@ -396,22 +391,22 @@ class ObjectDetection(CorePathvision):
                     DEBUG ONLY
                     - Once we've calculated the gradients and added them to the dict, we can save them to disk for convenience
                     '''
-                    if technique_key == "vanilla":
-                        for i in range(len(results['crops'])):
-                            np.save('pathvision/test/outs/vanilla/grayscale/grayscale_image{}.npy'.format(i),
-                                    results['vanilla']['gradients']['grayscale_2d'][i])
-                            np.save('pathvision/test/outs/vanilla/heatmap/heatmap_image{}.npy'.format(i),
-                                    results['vanilla']['gradients']['heatmap_3d'][i])
+                    if debug:
+                        if technique_key == "vanilla":
+                            for i in range(len(results['crops'])):
+                                np.save('pathvision/test/outs/vanilla/heatmap/heatmap_image{}.npy'.format(i),
+                                        results['vanilla']['gradients']['heatmap_3d'][i])
+                                np.save('pathvision/test/outs/vanilla/raw/raw_grad{}.npy'.format(i),
+                                        vanilla_mask_3d)
 
-                    elif technique_key == "smoothgrad":
-                        for i in range(len(results['crops'])):
-                            np.save('pathvision/test/outs/smoothgrad/grayscale/grayscale_image{}.npy'.format(i),
-                                    results['smoothgrad']['gradients']['grayscale_2d'][i])
-                            np.save('pathvision/test/outs/smoothgrad/heatmap/heatmap_image{}.npy'.format(i),
-                                    results['smoothgrad']['gradients']['heatmap_3d'][i])
+                        elif technique_key == "smoothgrad":
+                            for i in range(len(results['crops'])):
+                                np.save('pathvision/test/outs/smoothgrad/heatmap/heatmap_image{}.npy'.format(i),
+                                        results['smoothgrad']['gradients']['heatmap_3d'][i])
+                                np.save('pathvision/test/outs/smoothgrad/raw/raw_grad{}.npy'.format(i),
+                                        smoothgrad_mask_3d)
                 else:
                     LOGGER.info("Loading gradients from disk")
-
                     folder = folder_dict.get(gradient_technique)
                     # Loop through the files in the folder and load the numpy arrays
                     for i, filename in enumerate([f for f in os.listdir(folder + "heatmap/") if f.endswith('.npy')]):
@@ -439,11 +434,9 @@ class ObjectDetection(CorePathvision):
                     overlap_pixels_list = []
                     masked_regions = []
 
-                    original_image = results['origin']
                     # Loop through the masks and save each one as a separate image
-
                     for i, mask in enumerate(masks):
-                        # Convert the binary mask to a uint8 image (0s and 255s)
+                        # Convert the binary mask to a uint8 image (0s and 255s) for visualisation
                         mask = np.uint8(mask * 255)
                         # Apply a bitwise-and operation to the original image to extract the masked region
                         original_base_image = Image.new("RGBA", results['size'], 0)

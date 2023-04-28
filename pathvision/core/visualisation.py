@@ -17,11 +17,9 @@ import numpy as np
 from matplotlib import pyplot as plt
 from PIL import Image
 
-def VisualizeImage(image_3d, percentile=99):
-    r"""Returns a 3D tensor as a grayscale 2D tensor.
-
-  This method sums a 3D tensor across the absolute value of axis=2, and then
-  clips values at a given percentile.
+def VisualizeImageToHeatmap(image_3d, percentile=9):
+    r"""Returns a 3D tensor as a grayscale 2D tensor or a RGB 3D heatmap.
+    Pixels with higher weightage in sailiency heatmap will most saturated and will correspond to high RGB values in output heatmap_rgb
   """
     image_2d = np.sum(np.abs(image_3d), axis=2)
 
@@ -29,6 +27,7 @@ def VisualizeImage(image_3d, percentile=99):
     vmax = np.percentile(image_2d, percentile)
     # Get minimum pixel value in the image
     vmin = np.min(image_2d)
+    print("vmin {}".format(vmin))
     # Normalise the values. We clip intensities so values lower than 0 are equal 0.
     image_2d = np.clip((image_2d - vmin) / (vmax - vmin), 0, 1)
 
@@ -36,9 +35,11 @@ def VisualizeImage(image_3d, percentile=99):
     heatmap = plt.get_cmap('jet')(image_2d)
 
     # Convert heatmap to RGB image to support PIL .paste() as it doesn't support RGBA
-    heatmap_rgb = np.delete(heatmap, 3, 2)
+    heatmap_rgb = np.delete(heatmap, 3, 2) * 255
 
-    return heatmap_rgb
+    # Normalise to 0,255 so it's visible when pasted
+    return heatmap_rgb.astype(np.uint8)
+
 
 def VisualizeImageDiverging(image_3d, percentile=99):
     r"""Returns a 3D tensor as a 2D tensor with positive and negative values.
