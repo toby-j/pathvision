@@ -17,7 +17,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 from PIL import Image
 
-def VisualizeImageToHeatmap(image_3d, percentile=9):
+def VisualizeImageToHeatmap(image_3d, percentile=99):
     r"""Returns a 3D tensor as a grayscale 2D tensor or a RGB 3D heatmap.
     Pixels with higher weightage in sailiency heatmap will most saturated and will correspond to high RGB values in output heatmap_rgb
   """

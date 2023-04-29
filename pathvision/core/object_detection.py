@@ -366,12 +366,12 @@ class ObjectDetection(CorePathvision):
                         if technique_key == "vanilla":
                             vanilla_mask_3d = vanilla_vision.GetMask(results['crops'][i], _call_model_function,
                                                                      call_model_args)
-                            results['vanilla']['gradients']['heatmap_3d'].append(pathvision.VisualizeImageToHeatmap(image_3d=vanilla_mask_3d, heatmap=True))
+                            results['vanilla']['gradients']['heatmap_3d'].append(pathvision.VisualizeImageToHeatmap(image_3d=vanilla_mask_3d))
 
                         elif technique_key == "smoothgrad":
                             smoothgrad_mask_3d = vanilla_vision.GetSmoothedMask(results['crops'][i], _call_model_function,
                                                                                 call_model_args)
-                            results['smoothgrad']['gradients']['heatmap_3d'].append(pathvision.VisualizeImageToHeatmap(image_3d=smoothgrad_mask_3d, heatmap=True))
+                            results['smoothgrad']['gradients']['heatmap_3d'].append(pathvision.VisualizeImageToHeatmap(image_3d=smoothgrad_mask_3d))
 
                         LOGGER.info("Completed image {} of {}".format(frames.index(frame)+1, len(frames)+1))
                         LOGGER.info("Saving to disk")
