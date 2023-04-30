@@ -30,6 +30,7 @@ from detectron2 import model_zoo
 from detectron2.config import get_cfg
 from detectron2.engine import DefaultPredictor
 import pathvision.core as pathvision
+from pathvision.core.meaurements import calculate_overlap
 from pathvision.core.visualisation import VisualizeImageToHeatmap
 
 to_pil = ToPILImage()
@@ -39,12 +40,6 @@ from pathvision.core.types import Gradient, Segmentation, Trajectory, Labels, Mo
 from pathvision.core.logger import logger as LOGGER
 import torchvision
 import torch
-
-'''
-TODO: Run the object detection model on the images.
-TODO: Run selected techniques on the images
-TODO: Send back processed images, with result dict to analyse
-'''
 
 INCORRECT_VALUE = 'INCORRECT_VALUE'
 EMPTY_FRAMES = 'EMPTY_FRAMES'
@@ -71,10 +66,25 @@ PARAMETER_ERROR_MESSAGE = {
     )
 }
 
-#TODO: The images are not being loaded from disk correctly.
+
 
 
 # Utility Functions
+# Public
+# Return PIL image as np array, or a image provided a path.
+def load_image_arr(file_path='', pil_img=None):
+    if file_path != '':
+        im = Image.open(file_path)
+    elif pil_img:
+        im = pil_img
+    else:
+        LOGGER.critical("Unable to convert image to array")
+        raise Exception
+    im = np.asarray(im)
+    return im
+
+# Utility Functions
+# Private
 
 def _preprocess_image(im):
     # assumes input is 4-D, with range [0,255]
@@ -122,24 +132,12 @@ def _crop_frame(frame, box):
     return cropped_image, (x1, y1, x2, y2)
 
 
-# Return PIL image as np array, or a image provided a path.
-def _load_image_arr(file_path='', pil_img=None):
-    if file_path != '':
-        im = Image.open(file_path)
-    elif pil_img:
-        im = pil_img
-    else:
-        LOGGER.critical("Unable to convert image to array")
-        raise Exception
-    im = np.asarray(im)
-    return im
-
-
 def _load_image(im):
     im = im.convert("RGB")
     im = TF.pil_to_tensor(im)
     frame_int = im.unsqueeze(dim=0)
     return frame_int
+
 
 def _reduce_opacity(im, opacity):
     """
@@ -168,7 +166,7 @@ class ObjectDetection(CorePathvision):
                       segmentation_technique=None,
                       pre_trained_model=None
                       , model=None,
-                      threshold=None,LoadFromDisk=False, log=False, debug=False):
+                      threshold=None, LoadFromDisk=False, log=False, debug=False):
 
         """Detects the objects in the frames. Uses trajectory prediction to find frames with errors. If errors are found,
         segmentation technique and the gradient technique are used on the frames to attempt to uncover the reason for the error.
@@ -236,7 +234,8 @@ class ObjectDetection(CorePathvision):
 
             target_class = call_model_args[class_idx_str]
             preds = model(images)
-            LOGGER.info("Classes in the prediction: {}".format([cat['name'] for cat in coco.loadCats(preds[0]["labels"].numpy()[:10])]))
+            LOGGER.info("Classes in the prediction: {}".format(
+                [cat['name'] for cat in coco.loadCats(preds[0]["labels"].numpy()[:10])]))
             LOGGER.info("IDs in the prediction: {}".format(
                 [cat['id'] for cat in coco.loadCats(preds[0]["labels"].numpy()[:10])]))
             out = preds[0]['scores'].unsqueeze(0)
@@ -284,18 +283,23 @@ class ObjectDetection(CorePathvision):
         coco_annotations = 'pathvision/data/instances_val2017.json'
         coco = COCO(coco_annotations)
 
+        results = {
+            "frame_data": [],
+            "errors": []
+        }
+
         if model:
             model.eval()
             for frame in frames:
-                LOGGER.info("Processing frame {} of {} frames".format(frames.index(frame)+1, len(frames)+1))
+                LOGGER.info("Processing frame {} of {} frames".format(frames.index(frame) + 1, len(frames) + 1))
                 im_pil = frame
-                im_arr = _load_image_arr(pil_img=im_pil)
+                im_arr = load_image_arr(pil_img=im_pil)
                 im_for_od = _preprocess_image([im_arr])
                 im_tensor = _load_image(im_pil)
                 od_preds = model(im_for_od)
                 pre, annot_labels = _pre_process_model_output(preds=od_preds, coco=coco)
 
-                results = {
+                frame_data = {
                     "origin": im_pil,
                     "crops": [],
                     "crops_on_origin": [],
@@ -311,7 +315,7 @@ class ObjectDetection(CorePathvision):
                             "internal": [],
                         },
                         "metrics": {
-                            "overlap_ps": 0
+                            "overlap_ps": 0.
                         }
                     },
                     "smoothgrad": {
@@ -324,7 +328,7 @@ class ObjectDetection(CorePathvision):
                             "internal": [],
                         },
                         "metrics": {
-                            "overlap_ps": 0
+                            "overlap_ps": 0.
                         }
                     },
                 }
@@ -333,21 +337,21 @@ class ObjectDetection(CorePathvision):
                                "Smoothgrad": "pathvision/test/outs/smoothgrad/"}
 
                 technique_dict = {"VanillaGradients": "vanilla",
-                               "Smoothgrad": "smoothgrad"}
+                                  "Smoothgrad": "smoothgrad"}
 
                 '''
                 Let's crop and organise every bounding box image
                 '''
                 # Get the size of the original image as our background canvas
-                results['size'] = tuple(reversed(im_tensor[0].shape[-2:]))
-                results['origin'] = im_pil
+                frame_data['size'] = tuple(reversed(im_tensor[0].shape[-2:]))
+                frame_data['origin'] = im_pil
                 for i in range(len(pre[0]['labels'])):
                     cropped_image, bb_coords = _crop_frame(im_tensor, pre[0]['boxes'][i].tolist())
-                    results['crops'].append(_load_image_arr(pil_img=cropped_image))
-                    results['coords'].append(bb_coords)
-                    original_size_image = Image.new("RGB", results['size'])
+                    frame_data['crops'].append(load_image_arr(pil_img=cropped_image))
+                    frame_data['coords'].append(bb_coords)
+                    original_size_image = Image.new("RGB", frame_data['size'])
                     original_size_image.paste(cropped_image, bb_coords)
-                    results['crops_on_origin'].append(original_size_image)
+                    frame_data['crops_on_origin'].append(original_size_image)
 
                 '''
                 Go through all labels and find their gradients 
@@ -364,24 +368,27 @@ class ObjectDetection(CorePathvision):
                         LOGGER.info("Category name for index value {}: {}".format(cat_id, cat_name))
 
                         if technique_key == "vanilla":
-                            vanilla_mask_3d = vanilla_vision.GetMask(results['crops'][i], _call_model_function,
+                            vanilla_mask_3d = vanilla_vision.GetMask(frame_data['crops'][i], _call_model_function,
                                                                      call_model_args)
-                            results['vanilla']['gradients']['heatmap_3d'].append(pathvision.VisualizeImageToHeatmap(image_3d=vanilla_mask_3d))
+                            frame_data['vanilla']['gradients']['heatmap_3d'].append(
+                                pathvision.VisualizeImageToHeatmap(image_3d=vanilla_mask_3d))
 
                         elif technique_key == "smoothgrad":
-                            smoothgrad_mask_3d = vanilla_vision.GetSmoothedMask(results['crops'][i], _call_model_function,
+                            smoothgrad_mask_3d = vanilla_vision.GetSmoothedMask(frame_data['crops'][i],
+                                                                                _call_model_function,
                                                                                 call_model_args)
-                            results['smoothgrad']['gradients']['heatmap_3d'].append(pathvision.VisualizeImageToHeatmap(image_3d=smoothgrad_mask_3d))
+                            frame_data['smoothgrad']['gradients']['heatmap_3d'].append(
+                                pathvision.VisualizeImageToHeatmap(image_3d=smoothgrad_mask_3d))
 
-                        LOGGER.info("Completed image {} of {}".format(frames.index(frame)+1, len(frames)+1))
+                        LOGGER.info("Completed image {} of {}".format(frames.index(frame) + 1, len(frames) + 1))
                         LOGGER.info("Saving to disk")
 
                         '''
                         Checking that we have the same number of gradients in each category.
                         '''
-                        vanilla_lengths = [len(results['vanilla']['gradients'][key]) for key in
+                        vanilla_lengths = [len(frame_data['vanilla']['gradients'][key]) for key in
                                            ['heatmap_3d']]
-                        smoothgrad_lengths = [len(results['smoothgrad']['gradients'][key]) for key in
+                        smoothgrad_lengths = [len(frame_data['smoothgrad']['gradients'][key]) for key in
                                               ['heatmap_3d']]
 
                         if not all(len_list == vanilla_lengths[0] for len_list in vanilla_lengths) and \
@@ -393,16 +400,16 @@ class ObjectDetection(CorePathvision):
                     '''
                     if debug:
                         if technique_key == "vanilla":
-                            for i in range(len(results['crops'])):
+                            for i in range(len(frame_data['crops'])):
                                 np.save('pathvision/test/outs/vanilla/heatmap/heatmap_image{}.npy'.format(i),
-                                        results['vanilla']['gradients']['heatmap_3d'][i])
+                                        frame_data['vanilla']['gradients']['heatmap_3d'][i])
                                 np.save('pathvision/test/outs/vanilla/raw/raw_grad{}.npy'.format(i),
                                         vanilla_mask_3d)
 
                         elif technique_key == "smoothgrad":
-                            for i in range(len(results['crops'])):
+                            for i in range(len(frame_data['crops'])):
                                 np.save('pathvision/test/outs/smoothgrad/heatmap/heatmap_image{}.npy'.format(i),
-                                        results['smoothgrad']['gradients']['heatmap_3d'][i])
+                                        frame_data['smoothgrad']['gradients']['heatmap_3d'][i])
                                 np.save('pathvision/test/outs/smoothgrad/raw/raw_grad{}.npy'.format(i),
                                         smoothgrad_mask_3d)
                 else:
@@ -410,8 +417,8 @@ class ObjectDetection(CorePathvision):
                     folder = folder_dict.get(gradient_technique)
                     # Loop through the files in the folder and load the numpy arrays
                     for i, filename in enumerate([f for f in os.listdir(folder + "heatmap/") if f.endswith('.npy')]):
-                        np_arr = np.load(os.path.join(folder,'heatmap/heatmap_image{}.npy'.format(i)))
-                        results[technique_key]['gradients']['heatmap_3d'].append(np_arr)
+                        np_arr = np.load(os.path.join(folder, 'heatmap/heatmap_image{}.npy'.format(i)))
+                        frame_data[technique_key]['gradients']['heatmap_3d'].append(np_arr)
 
                 if segmentation_technique == "Panoptic Deeplab":
                     cfg = get_cfg()
@@ -439,37 +446,34 @@ class ObjectDetection(CorePathvision):
                         # Convert the binary mask to a uint8 image (0s and 255s) for visualisation
                         mask = np.uint8(mask * 255)
                         # Apply a bitwise-and operation to the original image to extract the masked region
-                        original_base_image = Image.new("RGBA", results['size'], 0)
-                        smoothgrad_arr = results[technique_key]['gradients']['heatmap_3d'][i]
-                        original_base_image.paste(TF.to_pil_image(smoothgrad_arr), results['coords'][i])
+                        original_base_image = Image.new("RGBA", frame_data['size'], 0)
+                        smoothgrad_arr = frame_data[technique_key]['gradients']['heatmap_3d'][i]
+                        original_base_image.paste(TF.to_pil_image(smoothgrad_arr), frame_data['coords'][i])
 
                         # Extract the masked region from the main image.
                         masked_region = cv2.bitwise_and(im_arr[:, :, ::-1], im_arr[:, :, ::-1], mask=mask)
 
-                        im_arr = _load_image_arr(pil_img=original_base_image)
+                        im_arr = load_image_arr(pil_img=original_base_image)
                         im_bgr = cv2.cvtColor(im_arr, cv2.COLOR_BGR2BGRA)
 
                         # Apply the binary mask to the resized gradients to keep only the gradients that are within the segment
                         masked_gradients = cv2.bitwise_and(im_bgr, im_bgr, mask=mask)
 
-
                         # Calculating percentage of overlap, first we get the total of smoothgrad over the whole mask
-                        total_pixel_sum = np.sum(_load_image_arr(pil_img=original_base_image), axis=2)
-                        total_pixel_weight = np.sum(total_pixel_sum)
-                        # Next calcualte the sum of the crop
-                        masked_pixel_sum = np.sum(masked_gradients, axis=2)
-                        masked_pixel_weight = np.sum(masked_pixel_sum)
-                        # Based on these numbers, calculate percentage of overlap
-                        overlap_pixel_sum = total_pixel_weight - masked_pixel_weight
-                        overlap_pixel_weight = (overlap_pixel_sum / total_pixel_weight) * 100
+                        overlap_pixel_weight = calculate_overlap(masked_gradients, original_base_image)
 
-                        results['smoothgrad']['metrics']['overlap_ps'] = overlap_pixel_weight
+                        frame_data['smoothgrad']['metrics']['overlap_ps'] = overlap_pixel_weight
 
                         overlap_pixels = cv2.bitwise_and(im_bgr, im_bgr, mask=cv2.bitwise_not(mask))
 
+                        if overlap_pixel_weight > 50:
+                            # We log an error. The array reads as [the frame, [the index of the error type]). We can then inspect the data on the front-end.
+                            LOGGER.info("Overlapping pixels is over 50%, writing to error JSON")
+                            results['errors'].append([frames.index(frame), [1]])
+
                         if debug:
                             LOGGER.debug("Percentage of overlap: {}".format(overlap_pixel_weight))
-                            LOGGER.debug("Total gradient sum {}".format(total_pixel_weight))
+                            LOGGER.debug("Total gradient sum {}".format(np.sum(load_image_arr(pil_img=original_base_image), axis=2)))
                             LOGGER.debug("Writing debug images")
                             cv2.imwrite("debug/im_bgr_{}.png".format(time.time()), im_bgr)
                             cv2.imwrite("debug/masked_{}.png".format(time.time()), masked_gradients)
@@ -482,7 +486,6 @@ class ObjectDetection(CorePathvision):
                         overlap_pixels_list.append(overlap_pixels)
 
                         # Now that we've made the crops, we can reduce the noise for the output image.
-
 
                     # Create a new transparent image with the size of the background image
                     output_image = Image.new('RGBA', im_pil.size, (0, 0, 0, 0))
