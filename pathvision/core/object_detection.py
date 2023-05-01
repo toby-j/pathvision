@@ -67,8 +67,6 @@ PARAMETER_ERROR_MESSAGE = {
 }
 
 
-
-
 # Utility Functions
 # Public
 # Return PIL image as np array, or a image provided a path.
@@ -82,6 +80,7 @@ def load_image_arr(file_path='', pil_img=None):
         raise Exception
     im = np.asarray(im)
     return im
+
 
 # Utility Functions
 # Private
@@ -288,6 +287,10 @@ class ObjectDetection(CorePathvision):
             "errors": []
         }
 
+        to_track = {}
+
+        seen = {}
+
         if model:
             model.eval()
             for frame in frames:
@@ -298,6 +301,10 @@ class ObjectDetection(CorePathvision):
                 im_tensor = _load_image(im_pil)
                 od_preds = model(im_for_od)
                 pre, annot_labels = _pre_process_model_output(preds=od_preds, coco=coco)
+
+                LOGGER.info("Model preds: {}".format(od_preds))
+                # After we've processed the predictions, we're left with high accuracy predictions. There's a chance the model could predict the same object with high accuracy twice.
+                LOGGER.info("Model preds processed: {}".format(pre))
 
                 frame_data = {
                     "origin": im_pil,
@@ -347,16 +354,45 @@ class ObjectDetection(CorePathvision):
                 frame_data['origin'] = im_pil
                 for i in range(len(pre[0]['labels'])):
                     cropped_image, bb_coords = _crop_frame(im_tensor, pre[0]['boxes'][i].tolist())
-                    frame_data['crops'].append(load_image_arr(pil_img=cropped_image))
+                    # Store the cropped object as a numpy array
+                    frame_data['crops'].append(np.array(cropped_image))
                     frame_data['coords'].append(bb_coords)
-                    original_size_image = Image.new("RGB", frame_data['size'])
-                    original_size_image.paste(cropped_image, bb_coords)
-                    frame_data['crops_on_origin'].append(original_size_image)
+                    crop_object = Image.new("RGB", frame_data['size'])
+                    # Paste the crops over the origin image. Now we've only got the objects we're interested in in the image.
+                    crop_object.paste(cropped_image, bb_coords)
+                    frame_data['crops_on_origin'].append(crop_object)
 
                 '''
                 Go through all labels and find their gradients 
                 '''
                 class_idxs = pre[0]['labels']
+
+                # # Track each object the model's seen. If it's seen more than 5 times, we know to track it.
+                # # When calculating the initial "is it worth tracking it" we need to wipe it if it's not in class_idxs
+                # for idx in class_idxs:
+                #     if idx in seen:
+                #         seen[idx] += 1
+                #         if idx in to_track:
+                #             to_track[idx] += 1
+                #             if to_track[idx] == 5:
+                #                 # Do something when a tracked class is detected for 5 consecutive frames
+                #                 pass
+                #         else:
+                #             to_track[idx] = 1
+                #     else:
+                #         seen = {idx: 1}
+                #         to_track = {idx: 1}
+                #
+                #     # Reset the counts if the current frame has a different class_idx
+                #     if idx not in seen:
+                #         seen[idx] = 1
+                #         if idx in to_track:
+                #             to_track[idx] = 1
+                #
+                #     if len(to_track) > 0:
+                #         # Do something when a tracked class is detected
+                #         pass
+
                 technique_key = technique_dict.get(gradient_technique)
 
                 if LoadFromDisk == False:
@@ -433,13 +469,48 @@ class ObjectDetection(CorePathvision):
                     predictor = DefaultPredictor(cfg)
                     outputs = predictor(im_arr)
 
+                    print("im_arr {}".format(im_arr.shape))
+
+                    masks = []
+
+                    for i, crop_object in enumerate(frame_data['crops_on_origin']):
+                        # Create a blank background, paste the boolean mask over this background using the coordinates of the bounding box which we used to crop it in the first place!
+                        print("crop object {}".format(np.array(crop_object).shape))
+                        outputs = predictor(np.array(crop_object))
+                        instances = outputs["instances"].to("cpu")
+
+                        print("PRED MASKS")
+
+                        masks.append(instances.pred_masks[0].numpy().squeeze())
+
+                    # print("MASK SHAPE: {}".format(masks[0].shape))
+                    #
+                    # instances = outputs["instances"].to("cpu")
+                    # # Get the binary masks for each instance
+                    # masks = instances.pred_masks.numpy()
+
+                    outputs = predictor(im_arr)
+
                     instances = outputs["instances"].to("cpu")
+
+                    print("INSTANCES {}".format(instances))
                     # Get the binary masks for each instance
-                    masks = instances.pred_masks.numpy()
+                    mask_test = instances.pred_masks.numpy()
+
+                    print("mask test")
+                    print(type(mask_test))
+                    print(mask_test.shape)
 
                     masked_gradients_list = []
                     overlap_pixels_list = []
                     masked_regions = []
+
+                    print("mask")
+                    print(type(masks))
+                    print(type(masks[0]))
+                    print(masks[0].shape)
+
+                    print("Mask array {}".format(len(masks)))
 
                     # Loop through the masks and save each one as a separate image
                     for i, mask in enumerate(masks):
@@ -450,6 +521,8 @@ class ObjectDetection(CorePathvision):
                         smoothgrad_arr = frame_data[technique_key]['gradients']['heatmap_3d'][i]
                         original_base_image.paste(TF.to_pil_image(smoothgrad_arr), frame_data['coords'][i])
 
+                        print(im_arr.shape)
+                        print(mask.shape)
                         # Extract the masked region from the main image.
                         masked_region = cv2.bitwise_and(im_arr[:, :, ::-1], im_arr[:, :, ::-1], mask=mask)
 
@@ -457,6 +530,7 @@ class ObjectDetection(CorePathvision):
                         im_bgr = cv2.cvtColor(im_arr, cv2.COLOR_BGR2BGRA)
 
                         # Apply the binary mask to the resized gradients to keep only the gradients that are within the segment
+
                         masked_gradients = cv2.bitwise_and(im_bgr, im_bgr, mask=mask)
 
                         # Calculating percentage of overlap, first we get the total of smoothgrad over the whole mask
@@ -473,11 +547,12 @@ class ObjectDetection(CorePathvision):
 
                         if debug:
                             LOGGER.debug("Percentage of overlap: {}".format(overlap_pixel_weight))
-                            LOGGER.debug("Total gradient sum {}".format(np.sum(load_image_arr(pil_img=original_base_image), axis=2)))
+                            LOGGER.debug("Total gradient sum {}".format(
+                                np.sum(load_image_arr(pil_img=original_base_image), axis=2)))
                             LOGGER.debug("Writing debug images")
-                            cv2.imwrite("debug/im_bgr_{}.png".format(time.time()), im_bgr)
-                            cv2.imwrite("debug/masked_{}.png".format(time.time()), masked_gradients)
-                            cv2.imwrite("debug/overlap_pixels_{}.png".format(time.time()), overlap_pixels)
+                            cv2.imwrite("debug/im_bgr/im_bgr_{}.png".format(time.time()), im_bgr)
+                            cv2.imwrite("debug/masked/masked_{}.png".format(time.time()), masked_gradients)
+                            cv2.imwrite("debug/overlap_pixels/overlap_pixels_{}.png".format(time.time()), overlap_pixels)
 
                         # Save the masked region and the masked gradients as separate images
 
@@ -495,14 +570,16 @@ class ObjectDetection(CorePathvision):
                         # Overlay the gradient mask onto the transparent image
                         grad_mask = to_pil(grad_mask).convert('RGBA')
                         output_image.alpha_composite(grad_mask)
-                        if debug:
-                            output_image.save("debug/output_image {}.png".format(time.time()))
 
                     # Paste the transparent image onto the background image
                     im_pil = im_pil.convert('RGBA')
                     im_pil.putalpha(255)
                     result_image = im_pil.copy()
                     result_image.paste(_reduce_opacity(output_image, 0.7), (0, 0), _reduce_opacity(output_image, 0.7))
+
+                    if debug:
+                        output_image.save("debug/output_image/output_image {}.png".format(time.time()))
+                        result_image.save("debug/final_output/final_output {}.png".format(time.time()))
 
                     return result_image
 
