@@ -96,19 +96,15 @@ def load_image_arr(file_path='', pil_img=None):
 # Private
 
 def _preprocess_image(im):
-    # assumes input is 4-D, with range [0,255]
-    #
-    # torchvision have color channel as first dimension
-    # with normalization relative to mean/std of ImageNet:
-    #    https://pytorch.org/vision/stable/models.html
-
-    im = np.array(im)
-    im = im / 255
-    im = np.transpose(im, (0, 3, 1, 2))
-    im = torch.tensor(im, dtype=torch.float32)
+    ## If it's a png, we need to squeeze it. But we also check it's at least a .jpg (3 channels)
+    im_arr = np.array(im)
+    print(im_arr.shape)
+    im_arr = im_arr / 255
+    im_arr = np.transpose(im_arr, (0, 3, 1, 2))
+    im_tensor = torch.tensor(im_arr, dtype=torch.float32)
+    im_tensor = im_tensor[:, :3, :, :]
     # images = transformer.forward(images)
-    return im.requires_grad_(True)
-
+    return im_tensor.requires_grad_(True)
 
 """Here we clean the preds object returned from the model. There's likely many classes that has too low of a 
 percentage to bare importance. This is defined by the threshold amount.
@@ -204,7 +200,7 @@ class ObjectDetection(CorePathvision):
           model: optional: File path to user's model, pre_trained_model must be false.
           threshold: optional: percentage of what predictions the user is interested in. Objects classified with less than the threshold will be ignored
           LoadFromDisk: DEBUG: Loading the processed gradient outs from disk to avoid calculating them from scratch again
-          logger: OPTIONAL: Defaults to just show the ERROR and WARNING messages, but can be switched to DEBUG mode.
+          LOGGER: OPTIONAL: Defaults to just show the ERROR and WARNING messages, but can be switched to DEBUG mode.
         Raises:
             ValueError: Parameter sanitisation"""
 
@@ -257,7 +253,7 @@ class ObjectDetection(CorePathvision):
 
             target_class = call_model_args[class_idx_str]
             preds = model(images)
-            LOGGER.info("Classes in the prediction: {}".format(
+            LOGGER.info("Classes in the interpolation: {}".format(
                 [cat['name'] for cat in coco.loadCats(preds[0]["labels"].numpy()[:10])]))
             LOGGER.info("IDs in the prediction: {}".format(
                 [cat['id'] for cat in coco.loadCats(preds[0]["labels"].numpy()[:10])]))
@@ -323,6 +319,8 @@ class ObjectDetection(CorePathvision):
                 im_arr = load_image_arr(pil_img=im_pil)
                 im_for_od = _preprocess_image([im_arr])
                 im_tensor = _load_image(im_pil)
+                print("Im for od")
+                print(im_for_od.shape)
                 od_preds = model(im_for_od)
                 pre, annot_labels = _pre_process_model_output(preds=od_preds, coco=coco)
 
@@ -441,7 +439,7 @@ class ObjectDetection(CorePathvision):
                         cats = coco.loadCats(coco.getCatIds())
                         cat_id = call_model_args[class_idx_str]
                         cat_name = next(cat['name'] for cat in cats if cat['id'] == cat_id)
-                        LOGGER.info("Category name for index value {}: {}".format(cat_id, cat_name))
+                        LOGGER.debug("Category name for index value {}: {}".format(cat_id, cat_name))
 
                         if technique_key == "vanilla":
                             vanilla_mask_3d = vanilla_vision.GetMask(frame_data['crops'][i], _call_model_function,
@@ -456,8 +454,8 @@ class ObjectDetection(CorePathvision):
                             frame_data['smoothgrad']['gradients']['heatmap_3d'].append(
                                 pathvision.VisualizeImageToHeatmap(image_3d=smoothgrad_mask_3d))
 
-                        LOGGER.info("Completed image {} of {}".format(frames.index(frame) + 1, len(frames) + 1))
-                        LOGGER.info("Saving to disk")
+                        LOGGER.debug("Completed image {} of {}".format(frames.index(frame) + 1, len(frames) + 1))
+                        LOGGER.debug("Saving to disk")
 
                         '''
                         Checking that we have the same number of gradients in each category.
@@ -489,7 +487,7 @@ class ObjectDetection(CorePathvision):
                                 np.save('pathvision/test/outs/smoothgrad/raw/raw_grad{}.npy'.format(i),
                                         smoothgrad_mask_3d)
                 else:
-                    LOGGER.info("Loading gradients from disk")
+                    LOGGER.debug("Loading gradients from disk")
                     folder = folder_dict.get(gradient_technique)
                     # Loop through the files in the folder and load the numpy arrays
                     for i, filename in enumerate([f for f in os.listdir(folder + "heatmap/") if f.endswith('.npy')]):
@@ -538,11 +536,12 @@ class ObjectDetection(CorePathvision):
                         im_arr = load_image_arr(pil_img=original_base_image)
                         im_bgr = cv2.cvtColor(im_arr, cv2.COLOR_BGR2BGRA)
 
-                        # Apply the binary mask to the resized gradients to keep only the gradients that are within the segment
+                        # Apply the binary mask to the resized gradients to keep only the gradients that are within
+                        # the segment
 
                         masked_gradients = cv2.bitwise_and(im_bgr, im_bgr, mask=mask)
 
-                        # Calculating percentage of overlap, first we get the total of smoothgrad over the whole mask
+                        # Calculating percentage of overlap
                         overlap_pixel_weight = calculate_overlap(masked_gradients, original_base_image)
 
                         frame_data['smoothgrad']['metrics']['overlap_ps'] = overlap_pixel_weight
@@ -551,13 +550,13 @@ class ObjectDetection(CorePathvision):
 
                         if overlap_pixel_weight > 50:
                             # We log an error. The array reads as [the frame, [the index of the error type]). We can then inspect the data on the front-end.
-                            LOGGER.info("Overlapping pixels is over 50%, writing to error JSON")
+                            LOGGER.debug("Overlapping pixels is over 50%, writing to error JSON")
                             results['errors'].append([frames.index(frame), [1]])
 
                         if debug:
                             LOGGER.debug("Percentage of overlap: {}".format(overlap_pixel_weight))
-                            LOGGER.debug("Total gradient sum {}".format(
-                                np.sum(load_image_arr(pil_img=original_base_image), axis=2)))
+                            # LOGGER.debug("Total gradient sum {}".format(
+                            #     np.sum(load_image_arr(pil_img=original_base_image), axis=2)))
                             LOGGER.debug("Writing debug images")
                             cv2.imwrite("debug/im_bgr/im_bgr_{}.png".format(time.time()), im_bgr)
                             cv2.imwrite("debug/masked/masked_{}.png".format(time.time()), masked_gradients)
@@ -589,8 +588,5 @@ class ObjectDetection(CorePathvision):
                     if debug:
                         output_image.save("debug/output_image/output_image {}.png".format(time.time()))
                         result_image.save("debug/final_output/final_output {}.png".format(time.time()))
-
-                    return result_image
-
         else:
             raise ValueError(PARAMETER_ERROR_MESSAGE['NO_MODEL'])
