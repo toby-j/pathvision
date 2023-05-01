@@ -33,6 +33,16 @@ import pathvision.core as pathvision
 from pathvision.core.meaurements import calculate_overlap
 from pathvision.core.visualisation import VisualizeImageToHeatmap
 
+"""
+Finds the prime factors for a given integer RSA modulus n, where the range
+between the two prime factors is less than (64n)^1/4.
+
+:param n: The modulus to factorize.
+:param range_limit: Optionally, a range limit that can be specified to
+show if the assumption will hold.
+:return: Either the integers p and q in a Tuple, or None.
+"""
+
 to_pil = ToPILImage()
 import torchvision.transforms.functional as TF
 from pathvision.core.base import CorePathvision, INPUT_OUTPUT_GRADIENTS
@@ -100,6 +110,20 @@ def _preprocess_image(im):
     return im.requires_grad_(True)
 
 
+"""Here we clean the preds object returned from the model. There's likely many classes that has too low of a 
+percentage to bare importance. This is defined by the threshold amount.
+
+Pathvision supports multi-label objects. For example, an image of two for the same dog. We assume that the 
+predictions returned by the model would contain two high accuracies for dog. We can then assume there's two dogs in 
+the image.
+
+:param preds: The prediction object returned by the model
+:param threshold: Will ignore objects with prediction scores below this threshold percentage
+:param coco: If we're using COCO labels
+:return:
+    preds: a cleaned preds object
+    annot_labels: the labels of the objects as text
+"""
 def _pre_process_model_output(preds, threshold=0.8, coco=None):
     # Get the scores as a NumPy array
     scores = preds[0]['scores'].detach().numpy()
@@ -306,6 +330,22 @@ class ObjectDetection(CorePathvision):
                 # After we've processed the predictions, we're left with high accuracy predictions. There's a chance the model could predict the same object with high accuracy twice.
                 LOGGER.info("Model preds processed: {}".format(pre))
 
+                """
+                origin: original image as a PIL
+                crops: cropped out objects as their original size as a numpy array
+                crops_on_origin: cropped out objects pasted over a black image of the origin.
+                coords: Bounding box coordinates as x1, x2, y1, y2
+                size: Tuple of the resolution of the original image
+                gradients:
+                    heatmap_3d: RGB heatmap image from vanilla gradients
+                result_images:
+                    full: All techniques applied
+                    overlap: Only gradients that are not within the segment but are within the bounding box
+                    internal: Only gradients within the segment
+                metrics:
+                    overlap percentage: overlap percentage as a decimal
+                """
+
                 frame_data = {
                     "origin": im_pil,
                     "crops": [],
@@ -467,50 +507,21 @@ class ObjectDetection(CorePathvision):
                     cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url(
                         "COCO-PanopticSegmentation/panoptic_fpn_R_50_3x.yaml")
                     predictor = DefaultPredictor(cfg)
-                    outputs = predictor(im_arr)
-
-                    print("im_arr {}".format(im_arr.shape))
 
                     masks = []
 
                     for i, crop_object in enumerate(frame_data['crops_on_origin']):
                         # Create a blank background, paste the boolean mask over this background using the coordinates of the bounding box which we used to crop it in the first place!
-                        print("crop object {}".format(np.array(crop_object).shape))
                         outputs = predictor(np.array(crop_object))
                         instances = outputs["instances"].to("cpu")
-
-                        print("PRED MASKS")
-
+                        # We can be pretty certain the bounding box only has one object in it for the segmenter, so we use [0] to pick the first set of masks.
+                        # If there's multiple objects, pred_masks would contain multiple arrays of mask arrays.
                         masks.append(instances.pred_masks[0].numpy().squeeze())
-
-                    # print("MASK SHAPE: {}".format(masks[0].shape))
-                    #
-                    # instances = outputs["instances"].to("cpu")
-                    # # Get the binary masks for each instance
-                    # masks = instances.pred_masks.numpy()
-
-                    outputs = predictor(im_arr)
-
-                    instances = outputs["instances"].to("cpu")
-
-                    print("INSTANCES {}".format(instances))
-                    # Get the binary masks for each instance
-                    mask_test = instances.pred_masks.numpy()
-
-                    print("mask test")
-                    print(type(mask_test))
-                    print(mask_test.shape)
 
                     masked_gradients_list = []
                     overlap_pixels_list = []
                     masked_regions = []
 
-                    print("mask")
-                    print(type(masks))
-                    print(type(masks[0]))
-                    print(masks[0].shape)
-
-                    print("Mask array {}".format(len(masks)))
 
                     # Loop through the masks and save each one as a separate image
                     for i, mask in enumerate(masks):
@@ -521,8 +532,6 @@ class ObjectDetection(CorePathvision):
                         smoothgrad_arr = frame_data[technique_key]['gradients']['heatmap_3d'][i]
                         original_base_image.paste(TF.to_pil_image(smoothgrad_arr), frame_data['coords'][i])
 
-                        print(im_arr.shape)
-                        print(mask.shape)
                         # Extract the masked region from the main image.
                         masked_region = cv2.bitwise_and(im_arr[:, :, ::-1], im_arr[:, :, ::-1], mask=mask)
 
