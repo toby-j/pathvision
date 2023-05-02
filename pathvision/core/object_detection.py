@@ -353,6 +353,7 @@ class ObjectDetection(CorePathvision):
                     "vanilla": {
                         "gradients": {
                             "heatmap_3d": [],
+                            "raw": []
                         },
                         "result_images": {
                             "full": [],
@@ -444,8 +445,9 @@ class ObjectDetection(CorePathvision):
                         if technique_key == "vanilla":
                             vanilla_mask_3d = vanilla_vision.GetMask(frame_data['crops'][i], _call_model_function,
                                                                      call_model_args)
-                            frame_data['vanilla']['gradients']['heatmap_3d'].append(
-                                pathvision.VisualizeImageToHeatmap(image_3d=vanilla_mask_3d))
+                            heatmap_img, raw_gradients = pathvision.VisualizeImageToHeatmap(image_3d=vanilla_mask_3d)
+                            frame_data['vanilla']['gradients']['heatmap_3d'].append(heatmap_img)
+                            frame_data['vanilla']['gradients']['raw'].append(raw_gradients)
 
                         elif technique_key == "smoothgrad":
                             smoothgrad_mask_3d = vanilla_vision.GetSmoothedMask(frame_data['crops'][i],
@@ -509,7 +511,6 @@ class ObjectDetection(CorePathvision):
                     masks = []
 
                     for i, crop_object in enumerate(frame_data['crops_on_origin']):
-                        # Create a blank background, paste the boolean mask over this background using the coordinates of the bounding box which we used to crop it in the first place!
                         outputs = predictor(np.array(crop_object))
                         instances = outputs["instances"].to("cpu")
                         # We can be pretty certain the bounding box only has one object in it for the segmenter, so we use [0] to pick the first set of masks.
@@ -522,27 +523,50 @@ class ObjectDetection(CorePathvision):
 
 
                     # Loop through the masks and save each one as a separate image
-                    for i, mask in enumerate(masks):
+                    for i, raw_mask in enumerate(masks):
                         # Convert the binary mask to a uint8 image (0s and 255s) for visualisation
-                        mask = np.uint8(mask * 255)
+                        mask = np.uint8(raw_mask * 255)
                         # Apply a bitwise-and operation to the original image to extract the masked region
                         original_base_image = Image.new("RGBA", frame_data['size'], 0)
                         smoothgrad_arr = frame_data[technique_key]['gradients']['heatmap_3d'][i]
-                        original_base_image.paste(TF.to_pil_image(smoothgrad_arr), frame_data['coords'][i])
+
+                        raw_smoothgrad = frame_data[technique_key]['gradients']['raw'][i]
+
+                        raw_outputs = predictor(np.array(frame_data['crops'][i]))
+                        raw_instances = raw_outputs["instances"].to("cpu")
+                        raw_mask = raw_instances.pred_masks[0].numpy().squeeze()
+
+                        # We have to run the segmentor again, because crop on origin has the black background.
+                        # We're only interested in stuff in the boundng box, so we repeat the process, but just for pixels in the bounding box.
+                        # Invert the mask, so we get the gradients outside of the segment.
+                        raw_mask[:] = ~raw_mask
+                        mask_segment = np.where(np.array(raw_mask), np.array(raw_smoothgrad), 0)
+                        sum_mask_segment = np.sum(mask_segment)
+                        total_sum = np.sum(raw_smoothgrad)
+                        # What percentage are the gradients outside of the segment of the full gradient vector
+                        percentage_overlap = (sum_mask_segment / total_sum) * 100
+
+                        original_base_image.paste(smoothgrad_arr, frame_data['coords'][i])
+
+
 
                         # Extract the masked region from the main image.
                         masked_region = cv2.bitwise_and(im_arr[:, :, ::-1], im_arr[:, :, ::-1], mask=mask)
 
-                        im_arr = load_image_arr(pil_img=original_base_image)
-                        im_bgr = cv2.cvtColor(im_arr, cv2.COLOR_BGR2BGRA)
+                        im_bgr = cv2.cvtColor(np.asarray(original_base_image), cv2.COLOR_BGR2BGRA)
 
                         # Apply the binary mask to the resized gradients to keep only the gradients that are within
                         # the segment
 
                         masked_gradients = cv2.bitwise_and(im_bgr, im_bgr, mask=mask)
 
+                        print(type(masked_gradients))
+                        print(type(original_base_image))
+
+                        # Train the kalman filter
+
                         # Calculating percentage of overlap
-                        overlap_pixel_weight = calculate_overlap(masked_gradients, original_base_image)
+                        overlap_pixel_weight = calculate_overlap(original_base_image, masked_gradients)
 
                         frame_data['smoothgrad']['metrics']['overlap_ps'] = overlap_pixel_weight
 
