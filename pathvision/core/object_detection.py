@@ -31,7 +31,7 @@ from detectron2.config import get_cfg
 from detectron2.engine import DefaultPredictor
 import pathvision.core as pathvision
 from pathvision.core.meaurements import calculate_overlap
-from pathvision.core.visualisation import VisualizeImageToHeatmap
+from pathvision.core.visualisation import visualiseImageToHeatmap
 
 """
 Finds the prime factors for a given integer RSA modulus n, where the range
@@ -106,6 +106,7 @@ def _preprocess_image(im):
     # images = transformer.forward(images)
     return im_tensor.requires_grad_(True)
 
+
 """Here we clean the preds object returned from the model. There's likely many classes that has too low of a 
 percentage to bare importance. This is defined by the threshold amount.
 
@@ -120,6 +121,8 @@ the image.
     preds: a cleaned preds object
     annot_labels: the labels of the objects as text
 """
+
+
 def _pre_process_model_output(preds, threshold=0.8, coco=None):
     # Get the scores as a NumPy array
     scores = preds[0]['scores'].detach().numpy()
@@ -445,7 +448,7 @@ class ObjectDetection(CorePathvision):
                         if technique_key == "vanilla":
                             vanilla_mask_3d = vanilla_vision.GetMask(frame_data['crops'][i], _call_model_function,
                                                                      call_model_args)
-                            heatmap_img, raw_gradients = pathvision.VisualizeImageToHeatmap(image_3d=vanilla_mask_3d)
+                            heatmap_img, raw_gradients = pathvision.visualiseImageToHeatmap(image_3d=vanilla_mask_3d)
                             frame_data['vanilla']['gradients']['heatmap_3d'].append(heatmap_img)
                             frame_data['vanilla']['gradients']['raw'].append(raw_gradients)
 
@@ -454,7 +457,7 @@ class ObjectDetection(CorePathvision):
                                                                                 _call_model_function,
                                                                                 call_model_args)
                             frame_data['smoothgrad']['gradients']['heatmap_3d'].append(
-                                pathvision.VisualizeImageToHeatmap(image_3d=smoothgrad_mask_3d))
+                                pathvision.visualiseImageToHeatmap(image_3d=smoothgrad_mask_3d))
 
                         LOGGER.debug("Completed image {} of {}".format(frames.index(frame) + 1, len(frames) + 1))
                         LOGGER.debug("Saving to disk")
@@ -521,34 +524,21 @@ class ObjectDetection(CorePathvision):
                     overlap_pixels_list = []
                     masked_regions = []
 
-
                     # Loop through the masks and save each one as a separate image
                     for i, raw_mask in enumerate(masks):
                         # Convert the binary mask to a uint8 image (0s and 255s) for visualisation
                         mask = np.uint8(raw_mask * 255)
                         # Apply a bitwise-and operation to the original image to extract the masked region
                         original_base_image = Image.new("RGBA", frame_data['size'], 0)
-                        smoothgrad_arr = frame_data[technique_key]['gradients']['heatmap_3d'][i]
 
-                        raw_smoothgrad = frame_data[technique_key]['gradients']['raw'][i]
+                        percentage_overlap = calculate_overlap(predictor,
+                                                               frame_data[technique_key]['gradients']['raw'][i],
+                                                               frame_data['crops'][i])
 
-                        raw_outputs = predictor(np.array(frame_data['crops'][i]))
-                        raw_instances = raw_outputs["instances"].to("cpu")
-                        raw_mask = raw_instances.pred_masks[0].numpy().squeeze()
+                        frame_data[technique_key]['metrics']['overlap_ps'] = percentage_overlap
 
-                        # We have to run the segmentor again, because crop on origin has the black background.
-                        # We're only interested in stuff in the boundng box, so we repeat the process, but just for pixels in the bounding box.
-                        # Invert the mask, so we get the gradients outside of the segment.
-                        raw_mask[:] = ~raw_mask
-                        mask_segment = np.where(np.array(raw_mask), np.array(raw_smoothgrad), 0)
-                        sum_mask_segment = np.sum(mask_segment)
-                        total_sum = np.sum(raw_smoothgrad)
-                        # What percentage are the gradients outside of the segment of the full gradient vector
-                        percentage_overlap = (sum_mask_segment / total_sum) * 100
-
-                        original_base_image.paste(smoothgrad_arr, frame_data['coords'][i])
-
-
+                        original_base_image.paste(frame_data[technique_key]['gradients']['heatmap_3d'][i],
+                                                  frame_data['coords'][i])
 
                         # Extract the masked region from the main image.
                         masked_region = cv2.bitwise_and(im_arr[:, :, ::-1], im_arr[:, :, ::-1], mask=mask)
@@ -557,40 +547,25 @@ class ObjectDetection(CorePathvision):
 
                         # Apply the binary mask to the resized gradients to keep only the gradients that are within
                         # the segment
-
                         masked_gradients = cv2.bitwise_and(im_bgr, im_bgr, mask=mask)
 
-                        print(type(masked_gradients))
-                        print(type(original_base_image))
-
-                        # Train the kalman filter
-
-                        # Calculating percentage of overlap
-                        overlap_pixel_weight = calculate_overlap(original_base_image, masked_gradients)
-
-                        frame_data['smoothgrad']['metrics']['overlap_ps'] = overlap_pixel_weight
-
-                        overlap_pixels = cv2.bitwise_and(im_bgr, im_bgr, mask=cv2.bitwise_not(mask))
-
-                        if overlap_pixel_weight > 50:
+                        if percentage_overlap > 50:
                             # We log an error. The array reads as [the frame, [the index of the error type]). We can then inspect the data on the front-end.
                             LOGGER.debug("Overlapping pixels is over 50%, writing to error JSON")
                             results['errors'].append([frames.index(frame), [1]])
 
                         if debug:
-                            LOGGER.debug("Percentage of overlap: {}".format(overlap_pixel_weight))
+                            LOGGER.debug("Percentage of overlap: {}".format(percentage_overlap))
                             # LOGGER.debug("Total gradient sum {}".format(
                             #     np.sum(load_image_arr(pil_img=original_base_image), axis=2)))
                             LOGGER.debug("Writing debug images")
                             cv2.imwrite("debug/im_bgr/im_bgr_{}.png".format(time.time()), im_bgr)
                             cv2.imwrite("debug/masked/masked_{}.png".format(time.time()), masked_gradients)
-                            cv2.imwrite("debug/overlap_pixels/overlap_pixels_{}.png".format(time.time()), overlap_pixels)
 
                         # Save the masked region and the masked gradients as separate images
 
                         masked_regions.append(masked_region)
                         masked_gradients_list.append(masked_gradients)
-                        overlap_pixels_list.append(overlap_pixels)
 
                         # Now that we've made the crops, we can reduce the noise for the output image.
 

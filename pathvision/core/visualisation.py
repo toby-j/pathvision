@@ -17,10 +17,13 @@ import numpy as np
 from matplotlib import pyplot as plt, cm
 from PIL import Image
 
-def VisualizeImageToHeatmap(image_3d, percentile=99):
-    r"""Returns a 3D tensor as RGB 3D heatmap
-    Pixels with higher weightage in sailiency heatmap will most saturated and will correspond to high RGB values in output heatmap_rgb
-  """
+'''
+Convert 3D tensor to 2D vector and normalise.
+Used for calculating percentage overlap and visualisation techniques
+'''
+
+
+def normaliseGradients(image_3d, percentile=99):
     image_2d = np.sum(np.abs(image_3d), axis=2)
 
     # Get max pixel value in the image
@@ -29,10 +32,16 @@ def VisualizeImageToHeatmap(image_3d, percentile=99):
     vmin = np.min(image_2d)
 
     # Normalise the values. We clip intensities so values lower than 0 are equal 0.
-    image_2d = np.clip((image_2d - vmin) / (vmax - vmin), 0, 1)
+    return np.clip((image_2d - vmin) / (vmax - vmin), 0, 1)
 
+
+def visualiseImageToHeatmap(image_3d, percentile=99):
+    r"""Returns a 3D tensor as RGB 3D heatmap
+    Pixels with higher weightage in sailiency heatmap will most saturated and will correspond to high RGB values in output heatmap_rgb
+  """
+    image_2d = normaliseGradients(image_3d)
     # Create heatmap using "jet" colormap, which returns an RGBA image
-    heatmap = plt.get_cmap('jet')(image_2d)*255
+    heatmap = plt.get_cmap('jet')(image_2d) * 255
 
     # Normalise to 0,255 so it's visible when pasted
     return Image.fromarray(heatmap.astype(np.uint8), mode='RGBA'), image_2d
