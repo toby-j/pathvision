@@ -11,27 +11,25 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import sys
 import time
-
-import PIL
 import cv2
-from PIL import Image, ImageOps, ImageEnhance
+from PIL import Image, ImageEnhance
 import numpy as np
 import os
 import logging
-
-from numpy import savetxt
 from pycocotools.coco import COCO
 from torchvision.transforms import ToPILImage
-from torchvision.utils import save_image
-
 from detectron2 import model_zoo
 from detectron2.config import get_cfg
 from detectron2.engine import DefaultPredictor
 import pathvision.core as pathvision
 from pathvision.core.meaurements import calculate_overlap
-from pathvision.core.visualisation import visualiseImageToHeatmap
+import torchvision.transforms.functional as TF
+from pathvision.core.base import CorePathvision, INPUT_OUTPUT_GRADIENTS
+from pathvision.core.types import Gradient, Segmentation, Trajectory, Labels, Models
+from pathvision.core.logger import logger as LOGGER
+import torchvision
+import torch
 
 """
 Finds the prime factors for a given integer RSA modulus n, where the range
@@ -44,12 +42,6 @@ show if the assumption will hold.
 """
 
 to_pil = ToPILImage()
-import torchvision.transforms.functional as TF
-from pathvision.core.base import CorePathvision, INPUT_OUTPUT_GRADIENTS
-from pathvision.core.types import Gradient, Segmentation, Trajectory, Labels, Models
-from pathvision.core.logger import logger as LOGGER
-import torchvision
-import torch
 
 INCORRECT_VALUE = 'INCORRECT_VALUE'
 EMPTY_FRAMES = 'EMPTY_FRAMES'
@@ -310,9 +302,8 @@ class ObjectDetection(CorePathvision):
             "errors": []
         }
 
-        to_track = {}
+        kalman_tracker = {}
 
-        seen = {}
 
         if model:
             model.eval()
@@ -322,8 +313,7 @@ class ObjectDetection(CorePathvision):
                 im_arr = load_image_arr(pil_img=im_pil)
                 im_for_od = _preprocess_image([im_arr])
                 im_tensor = _load_image(im_pil)
-                print("Im for od")
-                print(im_for_od.shape)
+
                 od_preds = model(im_for_od)
                 pre, annot_labels = _pre_process_model_output(preds=od_preds, coco=coco)
 
@@ -394,6 +384,7 @@ class ObjectDetection(CorePathvision):
                 # Get the size of the original image as our background canvas
                 frame_data['size'] = tuple(reversed(im_tensor[0].shape[-2:]))
                 frame_data['origin'] = im_pil
+                # For the number of label's we
                 for i in range(len(pre[0]['labels'])):
                     cropped_image, bb_coords = _crop_frame(im_tensor, pre[0]['boxes'][i].tolist())
                     # Store the cropped object as a numpy array
@@ -404,38 +395,84 @@ class ObjectDetection(CorePathvision):
                     crop_object.paste(cropped_image, bb_coords)
                     frame_data['crops_on_origin'].append(crop_object)
 
-                '''
-                Go through all labels and find their gradients 
-                '''
-                class_idxs = pre[0]['labels']
-
-                # # Track each object the model's seen. If it's seen more than 5 times, we know to track it.
-                # # When calculating the initial "is it worth tracking it" we need to wipe it if it's not in class_idxs
-                # for idx in class_idxs:
-                #     if idx in seen:
-                #         seen[idx] += 1
-                #         if idx in to_track:
-                #             to_track[idx] += 1
-                #             if to_track[idx] == 5:
-                #                 # Do something when a tracked class is detected for 5 consecutive frames
-                #                 pass
-                #         else:
-                #             to_track[idx] = 1
-                #     else:
-                #         seen = {idx: 1}
-                #         to_track = {idx: 1}
-                #
-                #     # Reset the counts if the current frame has a different class_idx
-                #     if idx not in seen:
-                #         seen[idx] = 1
-                #         if idx in to_track:
-                #             to_track[idx] = 1
-                #
-                #     if len(to_track) > 0:
-                #         # Do something when a tracked class is detected
-                #         pass
-
                 technique_key = technique_dict.get(gradient_technique)
+
+                '''
+                Kalman Tracking
+                '''
+                #
+                # class_idxs = pre[0]['labels']
+                # # For each label
+                # for i, class_idx in enumerate(len(class_idxs)):
+                #     bb_box = pre[0]['boxes'][i]
+                #
+                #     def euclidean_distance(x1, y1, x2, y2):
+                #         return math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+                #
+                #     def find_closest_bbox(bboxes, target_bbox):
+                #         target_x, target_y = (target_bbox[0] + target_bbox[2]) / 2, (
+                #                     target_bbox[1] + target_bbox[3]) / 2
+                #         closest_bbox = None
+                #         idx = int()
+                #         closest_distance = float('inf')
+                #         for x, bbox in enumerate(bboxes):
+                #             bbox_x, bbox_y = (bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2
+                #             distance = euclidean_distance(target_x, target_y, bbox_x, bbox_y)
+                #             if distance < closest_distance:
+                #                 closest_bbox = bbox
+                #                 closest_distance = distance
+                #                 idx = x
+                #         return closest_bbox, idx
+                #
+                #     # We need to check if there's multiple of the same label in pre[0]['lebels']. if there is, we know we're looking at two objects.
+                #     # Their prediction scores might change, so we can't use index. Best approach is to use distance between bounding boxes to decide which one it belongs to.
+                #
+                #     if class_idx in kalman_tracker:
+                #         # Finding duplicates in the model's found classes
+                #         counter = Counter(class_idxs)
+                #         duplicates = [idx for idx, count in counter.items() if count > 1]
+                #         # Have we seen multiple of the same class?
+                #         if duplicates:
+                #             for x, dup_idx in enumerate(duplicates):
+                #                 # Collect known end bounding boxes for this object type
+                #                 object_bbs = []
+                #                 for object_list in kalman_tracker[dup_idx].values():
+                #                     if len(object_list) > 0:
+                #                         # Get the latest bounding box
+                #                         last_bb = object_list[-1]
+                #                         object_bbs.append(last_bb)
+                #                     else:
+                #                         LOGGER.debug("There wasn't an bounding box even though there was a key..")
+                #                 closest_bbox, idx = find_closest_bbox(object_bbs, bb_box)
+                #                 # Update the object with new box
+                #                 kalman_tracker[dup_idx][idx] = closest_bbox
+                #         else:
+                #             closest_bbox, idx = find_closest_bbox(kalman_tracker[class_idx].values()[-1], bb_box)
+                #             kalman_tracker[class_idx][idx] = closest_bbox
+                #
+                #     else:
+                #         kalman_tracker[class_idx] = [bb_box]
+                #
+                #
+                #     # Get the bounding box coordinates and calculate its center
+                #     bb_coords = pre[0]['boxes'][i].tolist()
+                #     bb_center = [(bb_coords[0] + bb_coords[2]) / 2, (bb_coords[1] + bb_coords[3]) / 2]
+                #
+                #     if class_idx in kalman_tracker.keys():
+                #         # Is there already more than one object in the dict
+                #         if isinstance(kalman_tracker.get(class_idx), dict) and len(kalman_tracker[class_idx]) > 1:
+                #             # There's multiple of the same class, so we need to find which one the bounding box belongs to
+                #             # We'll use Euclidean distance to find which object this box is closest to and we'll append to that one.
+                #             # This will get more accurate the higher the framerate
+                #         else:
+                #             # There's an object in the dict but there's only one
+                #             kalman_tracker[class_idx].append(bb_coords)
+                #     else:
+                #         kalman_tracker[class_idx] = bb_coords
+
+                '''
+                Gradient calculation
+                '''
 
                 if LoadFromDisk == False:
                     for i, tensor in enumerate(class_idxs):
@@ -521,7 +558,6 @@ class ObjectDetection(CorePathvision):
                         masks.append(instances.pred_masks[0].numpy().squeeze())
 
                     masked_gradients_list = []
-                    overlap_pixels_list = []
                     masked_regions = []
 
                     # Loop through the masks and save each one as a separate image
