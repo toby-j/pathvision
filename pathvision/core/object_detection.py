@@ -401,7 +401,7 @@ class ObjectDetection(CorePathvision):
                 Kalman Tracking
                 '''
                 #
-                # class_idxs = pre[0]['labels']
+                class_idxs = pre[0]['labels']
                 # # For each label
                 # for i, class_idx in enumerate(len(class_idxs)):
                 #     bb_box = pre[0]['boxes'][i]
