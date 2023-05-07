@@ -38,6 +38,7 @@ def tester():
                              LoadFromDisk=False, log=True, debug=True)
 
 
+
 # Kalman object tracker algorithm
 # One iteration is working. Next is to implement multi-iteration approach.
 if __name__ == "__main__":
@@ -51,11 +52,11 @@ if __name__ == "__main__":
     # bb_boxes2 = [[100, 100, 100, 100], [200, 200, 200, 200], [300, 300, 300, 300], [400, 400, 400, 400],
     #              [500, 500, 500, 500], [600, 600, 600, 600], [700, 700, 700, 700]]
     #
-    class_idxs3 = [1, 1, 1, 1, 1]
-    bb_boxes3 = [[100, 100, 100, 100], [100, 100, 100, 100], [100, 100, 100, 100], [100, 100, 100, 100], [100, 100, 100, 100]]
+    class_idxs3 = [1, 1, 1, 1, 1, 1, 1]
+    bb_boxes3 = [[200, 200, 200, 200], [300, 300, 300, 300], [400, 400, 400, 400],
+                 [500, 500, 500, 500], [600, 600, 600, 600], [100, 100, 100, 100], [700, 700, 700, 700]]
 
     kalman_tracker = {}
-
 
     def _euclidean_distance(x1, y1, x2, y2):
         return math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
@@ -75,72 +76,40 @@ if __name__ == "__main__":
 
 
     def test_kalman_tracker(class_idxs, bb_boxes):
-        # Finding duplicates in the model's found classes
-        counter = Counter(class_idxs)
-        duplicates = [{"class_idx": idx, "count": count} for idx, count in counter.items() if count > 1]
-        # Have we seen multiple of the same class?
+        # For each unique class that our model has seen
         for class_idx in list(set(class_idxs)):
+            # For this class, collect the indexes of where this class is in class_idxs
             class_count = [i for i in range(len(class_idxs)) if class_idxs[i] == class_idx]
             class_bb_boxes = []
             # Collect all boxes for each class
             for box_idx in class_count:
                 class_bb_boxes.append(bb_boxes[box_idx])
+            # For each class there's already being tracked
             if class_idx in kalman_tracker:
-                # New objects in the frame
-                number_of_new_boxes = len(kalman_tracker.get(class_idx).keys()) - len(class_bb_boxes)
-                # We're going to iterate the new boxes
+                # We create a copy because we'll remove boxes that have been appended to a tracked object.
+                # Therefore, any left over in this variable is our new objects that the model is not yet tracking.
                 boxes_to_place = class_bb_boxes.copy()
                 object_bbs = []
-
+                # For how many objects of this class we're already tracking, we collect the end box of each. We then
+                # have the latest position of these tracked objects. We use these to decide where to place our new
+                # boxes.
                 for key in kalman_tracker[class_idx].keys():
                     # Get the last box of each object
                     object_bbs.append(kalman_tracker[class_idx][key][0][:1][0])
 
-                # Go through existing boxes and see what of the new boxes match
+                # For each existing end box, see which of the new boxes is most appropriate to append
                 for i, box in enumerate(object_bbs):
                     ranked_bboxes = _rank_boxes(boxes_to_place, box)
-
+                    # Append new location to object
                     kalman_tracker[class_idx][str(i)].append(ranked_bboxes[0][0])
                     boxes_to_place.remove(ranked_bboxes[0][0])
-
+                # For remaining boxes, initialise a new object inside the class to begin tracking
                 for box in boxes_to_place:
                     kalman_tracker.setdefault(class_idx, {})[len(kalman_tracker[class_idx].keys())+1] = [[box]]
 
             else:
                 for i, bb_box in enumerate(class_bb_boxes):
                     kalman_tracker.setdefault(class_idx, {})[str(i)] = [[bb_box]]
-
-        # Now we've got the bounding boxes for the class
-        # We've got all the bounding boxes per class
-
-        # We need to check if there's multiple of the same label in pre[0]['lebels']. if there is, we know we're looking at two objects.
-        # Their prediction scores might change, so we can't use index. Best approach is to use distance between bounding boxes to decide which one it belongs to.
-
-        # if class_idx in kalman_tracker:
-        #
-        #     # Collect known end bounding boxes for this object type
-        #     object_bbs = []
-        #     # Are we already tracking more than one of these objects?
-        #
-        #
-        #
-        #     if len(kalman_tracker.get(class_idx).keys()) > 1:
-        #         # Collect up all the end boxes, so we can decide where to append our new box
-        #         for key in kalman_tracker[class_idx]:
-        #             object_bbs.append(kalman_tracker[class_idx][key][0][:1][0])
-        #         ranked_boxes = _rank_boxes(object_bbs, bb_box)
-        #         new_objects = len(kalman_tracker.get(class_idx).keys()) - len(ranked_boxes)
-        #         # Is there any new objects on screen?
-        #         if new_objects > 0:
-        #             kalman_tracker[class_idx][len(kalman_tracker.get(class_idx).keys()) + 1] = [
-        #                 [bb_box]]
-        #         best_box = ranked_boxes[0]
-        #         print("best box: {}".format(best_box))
-        #     else:
-        #         kalman_tracker[class_idx]["1"] = [[bb_box]]
-        # else:
-        #     kalman_tracker[class_idx] = {"0": [[bb_box]]}
-
 
     print("-----ITERATION 1-----")
     test_kalman_tracker(class_idxs1, bb_boxes1)
