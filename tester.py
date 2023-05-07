@@ -49,9 +49,8 @@ if __name__ == "__main__":
     # bb_boxes2 = [[100, 100, 100, 100], [200, 200, 200, 200], [300, 300, 300, 300], [400, 400, 400, 400],
     #              [500, 500, 500, 500], [600, 600, 600, 600], [700, 700, 700, 700]]
     #
-    class_idxs3 = [1, 1, 1, 1, 1, 1, 1]
-    bb_boxes3 = [[200, 200, 200, 200], [300, 300, 300, 300], [400, 400, 400, 400],
-                 [500, 500, 500, 500], [600, 600, 600, 600], [100, 100, 100, 100], [700, 700, 700, 700]]
+    class_idxs3 = [2, 3]
+    bb_boxes3 = [[200, 200, 200, 200], [300, 300, 300, 300]]
 
     kalman_tracker = {}
 
@@ -97,12 +96,13 @@ if __name__ == "__main__":
                 for i, box in enumerate(object_bbs):
                     ranked_bboxes = _rank_boxes(boxes_to_place, box)
                     # Append new location to object
-
                     kalman_tracker[class_idx][str(i)].append(ranked_bboxes[0][0])
                     boxes_to_place.remove(ranked_bboxes[0][0])
+                    if len(boxes_to_place) == 0:
+                        break
                 # For remaining boxes, initialise a new object inside the class to begin tracking
                 for box in boxes_to_place:
-                    kalman_tracker.setdefault(class_idx, {})[len(kalman_tracker[class_idx].keys())+1] = [[box]]
+                    kalman_tracker.setdefault(class_idx, {})[str(len(kalman_tracker[class_idx].keys())+1)] = [[box]]
 
             else:
                 # We're not yet tracking this class.
@@ -113,11 +113,15 @@ if __name__ == "__main__":
     print("-----ITERATION 1-----")
     test_kalman_tracker(class_idxs1, bb_boxes1)
 
+
+
     print("-----ITERATION 2-----")
     test_kalman_tracker(class_idxs3, bb_boxes3)
 
     print(json.dumps(kalman_tracker, indent=4, separators=(',', ': ')).replace('[\n    [',
                                                                                '[[[').replace(
         ']\n    ]', ']]]').replace(',\n        ', ', '))
+
+
 
     # tester()

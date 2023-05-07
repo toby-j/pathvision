@@ -304,6 +304,8 @@ class ObjectDetection(CorePathvision):
             "errors": []
         }
 
+        # TODO: We need to init a kalman filter for each new object that we may want to start tracking
+
         kalman_tracker = {}
 
         if model:
