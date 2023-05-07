@@ -37,10 +37,7 @@ def tester():
                              pre_trained_model="fasterrcnn_resnet50_fpn", model=None, threshold=None,
                              LoadFromDisk=False, log=True, debug=True)
 
-
-
-# Kalman object tracker algorithm
-# One iteration is working. Next is to implement multi-iteration approach.
+# TODO: Kalman filter prediction
 if __name__ == "__main__":
     # Able to put bounding box in to class id
 
@@ -63,7 +60,6 @@ if __name__ == "__main__":
 
 
     def _rank_boxes(bboxes, target_bbox):
-        print("TARGET BOX: {}".format(target_bbox))
         target_x, target_y = (target_bbox[0] + target_bbox[2]) / 2, (target_bbox[1] + target_bbox[3]) / 2
         distances = []
         for idx, bbox in enumerate(bboxes):
@@ -101,6 +97,7 @@ if __name__ == "__main__":
                 for i, box in enumerate(object_bbs):
                     ranked_bboxes = _rank_boxes(boxes_to_place, box)
                     # Append new location to object
+
                     kalman_tracker[class_idx][str(i)].append(ranked_bboxes[0][0])
                     boxes_to_place.remove(ranked_bboxes[0][0])
                 # For remaining boxes, initialise a new object inside the class to begin tracking
@@ -108,6 +105,8 @@ if __name__ == "__main__":
                     kalman_tracker.setdefault(class_idx, {})[len(kalman_tracker[class_idx].keys())+1] = [[box]]
 
             else:
+                # We're not yet tracking this class.
+                # For our box we have for this class, initialise a new tracking entry.
                 for i, bb_box in enumerate(class_bb_boxes):
                     kalman_tracker.setdefault(class_idx, {})[str(i)] = [[bb_box]]
 

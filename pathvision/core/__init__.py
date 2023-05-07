@@ -4,3 +4,4 @@ from .object_detection import *
 from .types import *
 from .visualisation import *
 from .vanilla import *
+from .tracking import *

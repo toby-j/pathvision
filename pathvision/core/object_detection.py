@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import time
 import cv2
 from PIL import Image, ImageEnhance
@@ -28,6 +29,7 @@ import torchvision.transforms.functional as TF
 from pathvision.core.base import CorePathvision, INPUT_OUTPUT_GRADIENTS
 from pathvision.core.types import Gradient, Segmentation, Trajectory, Labels, Models
 from pathvision.core.logger import logger as LOGGER
+from pathvision.core.tracking import iterate_kalman_tracker
 import torchvision
 import torch
 
@@ -304,7 +306,6 @@ class ObjectDetection(CorePathvision):
 
         kalman_tracker = {}
 
-
         if model:
             model.eval()
             for frame in frames:
@@ -399,76 +400,19 @@ class ObjectDetection(CorePathvision):
 
                 '''
                 Kalman Tracking
+                
+                Here, we update our kalman filter dict with the latest bounding box coordinates of the object's in 
+                the frame. Once we've built up enough of a history of an individual object, we can start to predict 
+                where it should be next using kalman filter.
+                
+                We do some error checking here:
+                    - If the model identifies an object that's too far (threshold) from the kalman filters prediction
+                    - If an object that's previously been tracked is missing on a single frame.
+                
                 '''
-                #
                 class_idxs = pre[0]['labels']
-                # # For each label
-                # for i, class_idx in enumerate(len(class_idxs)):
-                #     bb_box = pre[0]['boxes'][i]
-                #
-                #     def euclidean_distance(x1, y1, x2, y2):
-                #         return math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
-                #
-                #     def find_closest_bbox(bboxes, target_bbox):
-                #         target_x, target_y = (target_bbox[0] + target_bbox[2]) / 2, (
-                #                     target_bbox[1] + target_bbox[3]) / 2
-                #         closest_bbox = None
-                #         idx = int()
-                #         closest_distance = float('inf')
-                #         for x, bbox in enumerate(bboxes):
-                #             bbox_x, bbox_y = (bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2
-                #             distance = euclidean_distance(target_x, target_y, bbox_x, bbox_y)
-                #             if distance < closest_distance:
-                #                 closest_bbox = bbox
-                #                 closest_distance = distance
-                #                 idx = x
-                #         return closest_bbox, idx
-                #
-                #     # We need to check if there's multiple of the same label in pre[0]['lebels']. if there is, we know we're looking at two objects.
-                #     # Their prediction scores might change, so we can't use index. Best approach is to use distance between bounding boxes to decide which one it belongs to.
-                #
-                #     if class_idx in kalman_tracker:
-                #         # Finding duplicates in the model's found classes
-                #         counter = Counter(class_idxs)
-                #         duplicates = [idx for idx, count in counter.items() if count > 1]
-                #         # Have we seen multiple of the same class?
-                #         if duplicates:
-                #             for x, dup_idx in enumerate(duplicates):
-                #                 # Collect known end bounding boxes for this object type
-                #                 object_bbs = []
-                #                 for object_list in kalman_tracker[dup_idx].values():
-                #                     if len(object_list) > 0:
-                #                         # Get the latest bounding box
-                #                         last_bb = object_list[-1]
-                #                         object_bbs.append(last_bb)
-                #                     else:
-                #                         LOGGER.debug("There wasn't an bounding box even though there was a key..")
-                #                 closest_bbox, idx = find_closest_bbox(object_bbs, bb_box)
-                #                 # Update the object with new box
-                #                 kalman_tracker[dup_idx][idx] = closest_bbox
-                #         else:
-                #             closest_bbox, idx = find_closest_bbox(kalman_tracker[class_idx].values()[-1], bb_box)
-                #             kalman_tracker[class_idx][idx] = closest_bbox
-                #
-                #     else:
-                #         kalman_tracker[class_idx] = [bb_box]
-                #
-                #
-                #     # Get the bounding box coordinates and calculate its center
-                #     bb_coords = pre[0]['boxes'][i].tolist()
-                #     bb_center = [(bb_coords[0] + bb_coords[2]) / 2, (bb_coords[1] + bb_coords[3]) / 2]
-                #
-                #     if class_idx in kalman_tracker.keys():
-                #         # Is there already more than one object in the dict
-                #         if isinstance(kalman_tracker.get(class_idx), dict) and len(kalman_tracker[class_idx]) > 1:
-                #             # There's multiple of the same class, so we need to find which one the bounding box belongs to
-                #             # We'll use Euclidean distance to find which object this box is closest to and we'll append to that one.
-                #             # This will get more accurate the higher the framerate
-                #         else:
-                #             # There's an object in the dict but there's only one
-                #             kalman_tracker[class_idx].append(bb_coords)
-                #     else:
-                #         kalman_tracker[class_idx] = bb_coords
+
+                kalman_tracker = iterate_kalman_tracker(class_idxs, pre[0]['boxes'], kalman_tracker)
 
                 '''
                 Gradient calculation
