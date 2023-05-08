@@ -92,16 +92,16 @@ if __name__ == "__main__":
                 # have the latest position of these tracked objects. We use these to decide where to place our new
                 # boxes.
 
-                for key in kalman_tracker[class_idx]['boxes'].keys():
+                for key in kalman_tracker[class_idx].keys():
                     # Get the last box of each object
-                    object_bbs.append(kalman_tracker[class_idx]['boxes'][key][0][:1][0])
+                    object_bbs.append(kalman_tracker[class_idx][key]['boxes'][0][:1][0])
 
                 # For each existing end box, see which of the new boxes is most appropriate to append
                 for i, box in enumerate(object_bbs):
                     ranked_bboxes = _rank_boxes(boxes_to_place, box)
                     # Append new location to object
-                    kalman_tracker[class_idx]['boxes'][str(i)].append(ranked_bboxes[0][0])
-                    kalman = kalman_tracker[class_idx]["kalman"]
+                    kalman_tracker[class_idx][str(i)]['boxes'].append(ranked_bboxes[0][0])
+                    kalman = kalman_tracker[class_idx][str(i)]["kalman"]
                     # We initialise with previously known boxes
                     kalman.iterate(np.float32(box))
                     boxes_to_place.remove(ranked_bboxes[0][0])
@@ -111,21 +111,20 @@ if __name__ == "__main__":
 
                 # For remaining boxes, initialise a new object inside the class to begin tracking
                 for box in boxes_to_place:
-
                     kalman_tracker.setdefault(class_idx, {'boxes'})[str(len(kalman_tracker[class_idx].keys())+1)] = [[box]]
 
 
             else:
                 # We're not yet tracking this class.
                 # For our box we have for this class, initialise a new tracking entry.
-                kalman_tracker.setdefault(class_idx, {'boxes': {}})
+                kalman_tracker.setdefault(class_idx, {})
                 for i, box in enumerate(class_bb_boxes):
-                    kalman_tracker[class_idx]['boxes'][str(i)] = [[box]]
-                    kalman_tracker[class_idx]["kalman"] = KalmanBB()
-                    kalman = kalman_tracker[class_idx]["kalman"]
+                    kalman_tracker[class_idx].setdefault(str(i), {})
+                    kalman_tracker[class_idx][str(i)]['boxes'] = [[box]]
+                    kalman_tracker[class_idx][str(i)].setdefault("kalman", KalmanBB())
+                    kalman = kalman_tracker[class_idx][str(i)]["kalman"]
                     kalman.init(np.float32(box))
-                    kalman_tracker[class_idx]["kalman"] = kalman
-
+                    kalman_tracker[class_idx][str(i)]["kalman"] = kalman
 
     print("-----ITERATION 1-----")
     test_kalman_tracker(class_idxs1, bb_boxes1)
