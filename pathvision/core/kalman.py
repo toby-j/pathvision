@@ -47,7 +47,7 @@ class KalmanBB:
     def __init__(self):
         self.nstates = 8
         self.measurements = 4
-        self.kfilt = cv.KalmanFilter(self.nstates, self.measurements, 0)
+        self.KF = cv.KalmanFilter(self.nstates, self.measurements, 0)
         self.ticks = 0
         self.lastTicks = 0
 
@@ -66,11 +66,11 @@ class KalmanBB:
         # [ 0  0  0  0  0  1  0 dT ] => dT at TDTH
         # [ 0  0  0  0  0  0  1  0 ]
         # [ 0  0  0  0  0  0  0  1 ]
-        self.kfilt.transitionMatrix = np.eye(self.nstates, dtype=np.float32)
-        self.kfilt.transitionMatrix[self.SBBX, self.SV_X] = 1.0
-        self.kfilt.transitionMatrix[self.SBBY, self.SV_Y] = 1.0
-        self.kfilt.transitionMatrix[self.SBBW, self.SV_W] = 1.0
-        self.kfilt.transitionMatrix[self.SBBH, self.SV_H] = 1.0
+        self.KF.transitionMatrix = np.eye(self.nstates, dtype=np.float32)
+        self.KF.transitionMatrix[self.SBBX, self.SV_X] = 1.0
+        self.KF.transitionMatrix[self.SBBY, self.SV_Y] = 1.0
+        self.KF.transitionMatrix[self.SBBW, self.SV_W] = 1.0
+        self.KF.transitionMatrix[self.SBBH, self.SV_H] = 1.0
 
         # H: Measurement Matrix
         #   x  y vx vt  w  h vw vh
@@ -78,11 +78,11 @@ class KalmanBB:
         # [ 0  1  0  0  0  0  0  0 ] y
         # [ 0  0  0  0  1  0  0  0 ] w
         # [ 0  0  0  0  0  1  0  0 ] h
-        self.kfilt.measurementMatrix = np.zeros((self.measurements, self.nstates), dtype=np.float32)
-        self.kfilt.measurementMatrix[self.MBBX, self.SBBX] = 1.0
-        self.kfilt.measurementMatrix[self.MBBY, self.SBBY] = 1.0
-        self.kfilt.measurementMatrix[self.MBBW, self.SBBW] = 1.0
-        self.kfilt.measurementMatrix[self.MBBH, self.SBBH] = 1.0
+        self.KF.measurementMatrix = np.zeros((self.measurements, self.nstates), dtype=np.float32)
+        self.KF.measurementMatrix[self.MBBX, self.SBBX] = 1.0
+        self.KF.measurementMatrix[self.MBBY, self.SBBY] = 1.0
+        self.KF.measurementMatrix[self.MBBW, self.SBBW] = 1.0
+        self.KF.measurementMatrix[self.MBBH, self.SBBH] = 1.0
 
         # Q: Process Noise Covariance Matrix
         #   x    y   vx   vt    w    h    vw   vh
@@ -94,20 +94,20 @@ class KalmanBB:
         # [ 0    0    0    0    0    Ebbh 0    0   ]
         # [ 0    0    0    0    0    0    Ev_w 0   ]
         # [ 0    0    0    0    0    0    0    Ev_h]
-        self.kfilt.processNoiseCov = np.eye(self.nstates, dtype=np.float32) * (1e-2)
+        self.KF.processNoiseCov = np.eye(self.nstates, dtype=np.float32) * (1e-2)
         # Override velocity errors
-        self.kfilt.processNoiseCov[self.SV_X, self.SV_X] = 2.0
-        self.kfilt.processNoiseCov[self.SV_Y, self.SV_Y] = 2.0
-        self.kfilt.processNoiseCov[self.SV_W, self.SV_W] = 2.0
-        self.kfilt.processNoiseCov[self.SV_H, self.SV_H] = 2.0
+        self.KF.processNoiseCov[self.SV_X, self.SV_X] = 2.0
+        self.KF.processNoiseCov[self.SV_Y, self.SV_Y] = 2.0
+        self.KF.processNoiseCov[self.SV_W, self.SV_W] = 2.0
+        self.KF.processNoiseCov[self.SV_H, self.SV_H] = 2.0
 
         # R: Measurement Noise Covariance Matrix
         # Higher value increases uncertainty to give more weight to prediction
         # Lower value decreases uncertainty to give more weight to measurement
-        self.kfilt.measurementNoiseCov = np.eye(self.measurements, dtype=np.float32) * 0.1
+        self.KF.measurementNoiseCov = np.eye(self.measurements, dtype=np.float32) * 0.1
 
     def init(self, meas):
-        state = np.zeros(self.kfilt.statePost.shape, np.float32)
+        state = np.zeros(self.KF.statePost.shape, np.float32)
         state[self.SBBX] = meas[0]
         state[self.SBBY] = meas[1]
         state[self.SV_X] = 0
@@ -116,8 +116,8 @@ class KalmanBB:
         state[self.SBBH] = meas[3]
         state[self.SV_W] = 0
         state[self.SV_H] = 0
-        self.kfilt.statePost = state
-        self.kfilt.statePre = state
+        self.KF.statePost = state
+        self.KF.statePre = state
         self.lastTicks = self.ticks
         self.ticks = cv.getTickCount()
         return meas
@@ -132,61 +132,44 @@ class KalmanBB:
             dT = 1.0 * (self.ticks - self.lastTicks) / cv.getTickFrequency()
 
         # Update the transition Matrix A with dT for this stamp
-        self.kfilt.transitionMatrix[self.SBBX, self.SV_X] = dT
-        self.kfilt.transitionMatrix[self.SBBY, self.SV_Y] = dT
-        self.kfilt.transitionMatrix[self.SBBW, self.SV_W] = dT
-        self.kfilt.transitionMatrix[self.SBBH, self.SV_H] = dT
+        self.KF.transitionMatrix[self.SBBX, self.SV_X] = dT
+        self.KF.transitionMatrix[self.SBBY, self.SV_Y] = dT
+        self.KF.transitionMatrix[self.SBBW, self.SV_W] = dT
+        self.KF.transitionMatrix[self.SBBH, self.SV_H] = dT
 
         # Step the prediction, we now need to normalise our new coordinates
-        self.kfilt.predict()
+        self.KF.predict()
 
         # Keeping the values greater than or equal to 0
-        self.kfilt.statePre[self.SBBX] = max(0.0, self.kfilt.statePre[self.SBBX])
-        self.kfilt.statePre[self.SBBY] = max(0.0, self.kfilt.statePre[self.SBBY])
-        self.kfilt.statePre[self.SBBW] = max(0.0, self.kfilt.statePre[self.SBBW])
-        self.kfilt.statePre[self.SBBH] = max(0.0, self.kfilt.statePre[self.SBBH])
+        self.KF.statePre[self.SBBX] = max(0.0, self.KF.statePre[self.SBBX])
+        self.KF.statePre[self.SBBY] = max(0.0, self.KF.statePre[self.SBBY])
+        self.KF.statePre[self.SBBW] = max(0.0, self.KF.statePre[self.SBBW])
+        self.KF.statePre[self.SBBH] = max(0.0, self.KF.statePre[self.SBBH])
 
         # Returning the predicted values for bbx, bby, bbw, and bbh
         return np.float32(
-            [self.kfilt.statePre[self.SBBX], self.kfilt.statePre[self.SBBY], self.kfilt.statePre[self.SBBW],
-             self.kfilt.statePre[self.SBBH]]).squeeze()
+            [self.KF.statePre[self.SBBX], self.KF.statePre[self.SBBY], self.KF.statePre[self.SBBW],
+             self.KF.statePre[self.SBBH]]).squeeze()
 
-    def correct(self, bbx, bby, bbw, bbh, restart=False):  # state correction using measurement matrix with BB
-
-        if restart:
-            self.ticks = cv.getTickCount()
-            cv.setIdentity(self.kfilt.errorCovPre, 1.0)
-
-            # Updating statePost with bbx, bby, bbw, and bbh
-            self.kfilt.statePost[self.SBBX] = bbx
-            self.kfilt.statePost[self.SBBX] = bby
-            self.kfilt.statePost[self.SV_X] = 0
-            self.kfilt.statePost[self.SV_Y] = 0
-            self.kfilt.statePost[self.SBBW] = bbw
-            self.kfilt.statePost[self.SBBH] = bbh
-            self.kfilt.statePost[self.SV_W] = 0
-            self.kfilt.statePost[self.SV_H] = 0
-
-        else:
-            # Running correct with bbx, bby, bbw, and bbh
-            self.kfilt.correct(np.float32([bbx, bby, bbw, bbh]).squeeze())
+    def correct_current_location(self):  # state correction using measurement matrix with BB
 
         # Keeping the values greater than or equal to 0
-        self.kfilt.statePost[self.SBBX] = max(0.0, self.kfilt.statePost[self.SBBX])
-        self.kfilt.statePost[self.SBBY] = max(0.0, self.kfilt.statePost[self.SBBY])
-        self.kfilt.statePost[self.SBBW] = max(0.0, self.kfilt.statePost[self.SBBW])
-        self.kfilt.statePost[self.SBBH] = max(0.0, self.kfilt.statePost[self.SBBH])
+        self.KF.statePost[self.SBBX] = max(0.0, self.KF.statePost[self.SBBX])
+        self.KF.statePost[self.SBBY] = max(0.0, self.KF.statePost[self.SBBY])
+        self.KF.statePost[self.SBBW] = max(0.0, self.KF.statePost[self.SBBW])
+        self.KF.statePost[self.SBBH] = max(0.0, self.KF.statePost[self.SBBH])
 
         # Return a floating point array with the corrected values for bbx, bby, bbw, bbh
         return np.float32(
-            [self.kfilt.statePost[self.SBBX], self.kfilt.statePost[self.SBBY], self.kfilt.statePost[self.SBBW],
-             self.kfilt.statePost[self.SBBH]]).squeeze()
+            [self.KF.statePost[self.SBBX], self.KF.statePost[self.SBBY], self.KF.statePost[self.SBBW],
+             self.KF.statePost[self.SBBH]]).squeeze()
+
+    def iterate(self, bb):
+        self.KF.correct(np.float32(bb).squeeze())
 
     def getPostState(self):  # get the state after correction
         # Return a floating point array with the correct values for bbx, bby, bbw, bbh
         # Use if you want to get the state after correction without actually running correction again
         return np.float32(
-            [self.kfilt.statePost[self.SBBX], self.kfilt.statePost[self.SBBY], self.kfilt.statePost[self.SBBW],
-             self.kfilt.statePost[self.SBBH]]).squeeze()
-
-
+            [self.KF.statePost[self.SBBX], self.KF.statePost[self.SBBY], self.KF.statePost[self.SBBW],
+             self.KF.statePost[self.SBBH]]).squeeze()

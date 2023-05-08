@@ -11,6 +11,7 @@ import numpy as np
 
 import pathvision.core as pathvision
 from pathvision.core.logger import logger as LOGGER
+from pathvision.core.kalman import KalmanBB
 import json
 
 
@@ -51,8 +52,10 @@ if __name__ == "__main__":
     #
     class_idxs3 = [2, 3]
     bb_boxes3 = [[200, 200, 200, 200], [300, 300, 300, 300]]
-
+    tracking = {}
     kalman_tracker = {}
+    fps = 300.
+    dT = (1 / fps)
 
     def _euclidean_distance(x1, y1, x2, y2):
         return math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
@@ -88,39 +91,47 @@ if __name__ == "__main__":
                 # For how many objects of this class we're already tracking, we collect the end box of each. We then
                 # have the latest position of these tracked objects. We use these to decide where to place our new
                 # boxes.
-                for key in kalman_tracker[class_idx].keys():
+
+                for key in kalman_tracker[class_idx]['boxes'].keys():
                     # Get the last box of each object
-                    object_bbs.append(kalman_tracker[class_idx][key][0][:1][0])
+                    object_bbs.append(kalman_tracker[class_idx]['boxes'][key][0][:1][0])
 
                 # For each existing end box, see which of the new boxes is most appropriate to append
                 for i, box in enumerate(object_bbs):
                     ranked_bboxes = _rank_boxes(boxes_to_place, box)
                     # Append new location to object
-                    kalman_tracker[class_idx][str(i)].append(ranked_bboxes[0][0])
+                    kalman_tracker[class_idx]['boxes'][str(i)].append(ranked_bboxes[0][0])
+                    kalman = kalman_tracker[class_idx]["kalman"]
+                    # We initialise with previously known boxes
+                    kalman.iterate(np.float32(box))
                     boxes_to_place.remove(ranked_bboxes[0][0])
+                    # If we have less new boxes than total tracked objects, we'll run out of new boxes.
                     if len(boxes_to_place) == 0:
                         break
+
                 # For remaining boxes, initialise a new object inside the class to begin tracking
                 for box in boxes_to_place:
-                    kalman_tracker.setdefault(class_idx, {})[str(len(kalman_tracker[class_idx].keys())+1)] = [[box]]
+
+                    kalman_tracker.setdefault(class_idx, {'boxes'})[str(len(kalman_tracker[class_idx].keys())+1)] = [[box]]
+
 
             else:
                 # We're not yet tracking this class.
                 # For our box we have for this class, initialise a new tracking entry.
-                for i, bb_box in enumerate(class_bb_boxes):
-                    kalman_tracker.setdefault(class_idx, {})[str(i)] = [[bb_box]]
+                kalman_tracker.setdefault(class_idx, {'boxes': {}})
+                for i, box in enumerate(class_bb_boxes):
+                    kalman_tracker[class_idx]['boxes'][str(i)] = [[box]]
+                    kalman_tracker[class_idx]["kalman"] = KalmanBB()
+                    kalman = kalman_tracker[class_idx]["kalman"]
+                    kalman.init(np.float32(box))
+                    kalman_tracker[class_idx]["kalman"] = kalman
+
 
     print("-----ITERATION 1-----")
     test_kalman_tracker(class_idxs1, bb_boxes1)
 
-
-
     print("-----ITERATION 2-----")
     test_kalman_tracker(class_idxs3, bb_boxes3)
-
-    print(json.dumps(kalman_tracker, indent=4, separators=(',', ': ')).replace('[\n    [',
-                                                                               '[[[').replace(
-        ']\n    ]', ']]]').replace(',\n        ', ', '))
 
 
 

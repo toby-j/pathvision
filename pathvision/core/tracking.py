@@ -17,7 +17,7 @@ def _rank_boxes(bboxes, target_bbox):
     return ranked_bboxes
 
 
-def iterate_kalman_tracker(class_idxs, bb_boxes, kalman_tracker):
+def iterate_kalman_tracker(class_idxs, bb_boxes, kalman_tracker, tracking):
     # For each unique class that our model has seen
     for class_idx in list(set(class_idxs)):
         # For this class, collect the indexes of where this class is in class_idxs
@@ -45,6 +45,9 @@ def iterate_kalman_tracker(class_idxs, bb_boxes, kalman_tracker):
                 # Append new location to object
                 kalman_tracker[class_idx][str(i)].append(ranked_bboxes[0][0])
                 boxes_to_place.remove(ranked_bboxes[0][0])
+                # If we have less new boxes than total tracked objects, we'll run out of new boxes.
+                if len(boxes_to_place) == 0:
+                    break
             # For remaining boxes, initialise a new object inside the class to begin tracking
             for box in boxes_to_place:
                 kalman_tracker.setdefault(class_idx, {})[len(kalman_tracker[class_idx].keys()) + 1] = [[box]]
