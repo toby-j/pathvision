@@ -39,7 +39,6 @@ if sys.version_info[0] != 3:
     variables to reflect the expected changes in these variables due to the elapsed time between updates.
 
     .correct() is used to update the state of the kalman filter
-
 '''
 
 

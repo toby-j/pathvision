@@ -259,7 +259,6 @@ class ObjectDetection(CorePathvision):
             if target_class not in preds[0]['labels']:
                 # It's not, so let's return an empty gradient. Which is essentially skipping this image.
                 LOGGER.info("{} is not in {}".format(target_class, preds[0]['labels']))
-
                 empty_gradients = torch.zeros_like(images.permute(0, 2, 3, 1)).detach().numpy()
                 return {INPUT_OUTPUT_GRADIENTS: empty_gradients}
             else:
@@ -418,10 +417,10 @@ class ObjectDetection(CorePathvision):
 
                 kalman_tracker = iterate_kalman_tracker(class_idxs, pre[0]['boxes'].detach(), kalman_tracker)
 
-                '''
-                Gradient calculation
-                '''
-
+                # '''
+                # Gradient calculation
+                # '''
+                #
                 # if LoadFromDisk == False:
                 #     for i, tensor in enumerate(class_idxs):
                 #         call_model_args = {class_idx_str: tensor.item()}

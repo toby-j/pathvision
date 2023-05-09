@@ -164,6 +164,7 @@ class KalmanBB:
             pred = self.predict(dT)
             cpred = self.correct(pred[0], pred[1], pred[2], pred[3], False)
         else:
+            pred = self.predict(dT)
             cpred = self.correct(bbx, bby, bbw, bbh, False)
         return cpred
 

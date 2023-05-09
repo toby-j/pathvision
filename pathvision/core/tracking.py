@@ -54,7 +54,7 @@ def _create_tracking_entry(class_idx, box, kalman_tracker):
 
 
 def iterate_kalman_tracker(class_idxs, bb_boxes, kalman_tracker) -> dict:
-    fps = 300.
+    fps = 24.
     dT = (1 / fps)
     # For each unique class that our model has seen
     print(set(class_idxs.tolist()))
@@ -88,12 +88,13 @@ def iterate_kalman_tracker(class_idxs, bb_boxes, kalman_tracker) -> dict:
                 kalman = kalman_tracker[class_idx][str(i)]["kalman"]
                 # We initialise with previously known boxes
                 # kalman.iterate(np.float32(box))
-
-                pred = kalman.predict()
                 # Kalman test
                 x, y, w, h = ranked_bboxes[0][0]
                 print("box locations: {} {} {} {}".format(x, y, w, h,))
-                tracked = kalman.track(x, y, w, h)
+                tracked = kalman.track(x, y, w, h, dT)
+
+                pred = kalman.predict(dT)
+
                 print("tracked position: {}".format(tracked))
                 print("predicted position: {}".format(pred))
                 print("Models bb: {}".format(ranked_bboxes[0][0]))
@@ -109,6 +110,7 @@ def iterate_kalman_tracker(class_idxs, bb_boxes, kalman_tracker) -> dict:
                 # If we have less new boxes than total tracked objects, we'll run out of new boxes.
                 if len(boxes_to_place) == 0:
                     break
+
 
             # For remaining boxes, initialise a new object inside the class to begin tracking
             for box in boxes_to_place:
