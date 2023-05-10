@@ -33,7 +33,10 @@ def calculate_overlap(segmenter, raw_gradients, crop) -> float:
     # Get mask using the bounding box crop
     outputs = segmenter(np.array(crop))
     instances = outputs["instances"].to("cpu")
-    raw_mask = instances.pred_masks[0].numpy().squeeze()
+    if len(instances.get("pred_masks")) > 0:
+        raw_mask = instances.get("pred_masks")[0].numpy().squeeze()
+    else:
+        return 0
     # Invert the mask, so the pixels outside are True.
     raw_mask[:] = ~raw_mask
     # Replace where the mask is False, with a 0 in the same location in raw_gradients

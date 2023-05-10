@@ -11,12 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import base64
 import time
 import cv2
-from PIL import Image, ImageEnhance
+from PIL import Image, ImageEnhance, ImageDraw
 import numpy as np
 import os
+import io
 import logging
 from pycocotools.coco import COCO
 from torchvision.transforms import ToPILImage
@@ -86,13 +87,22 @@ def load_image_arr(file_path='', pil_img=None):
     return im
 
 
+def _draw_bounding_boxes(image, pred, model_bb, thickness=2):
+    draw = ImageDraw.Draw(image)
+    x1, y1, x2, y2 = pred
+    draw.rectangle([(x1, y1), (x2, y2)], outline="green", width=thickness)
+    for bb in model_bb:
+        x1, y1, x2, y2 = bb
+        draw.rectangle([(x1, y1), (x2, y2)], outline="red", width=thickness)
+    return image
+
+
 # Utility Functions
 # Private
 
 def _preprocess_image(im):
     ## If it's a png, we need to squeeze it. But we also check it's at least a .jpg (3 channels)
     im_arr = np.array(im)
-    print(im_arr.shape)
     im_arr = im_arr / 255
     im_arr = np.transpose(im_arr, (0, 3, 1, 2))
     im_tensor = torch.tensor(im_arr, dtype=torch.float32)
@@ -169,6 +179,11 @@ def _reduce_opacity(im, opacity):
     alpha = ImageEnhance.Brightness(alpha).enhance(opacity)
     im.putalpha(alpha)
     return im
+
+def _pil_to_base64(img):
+    image_data = img.tobytes()
+    return base64.b64encode(image_data).decode("utf-8")
+
 
 
 class ObjectDetection(CorePathvision):
@@ -300,10 +315,9 @@ class ObjectDetection(CorePathvision):
 
         results = {
             "frame_data": [],
-            "errors": []
+            "errors": {},
+            "final_output": []
         }
-
-        # TODO: We need to init a kalman filter for each new object that we may want to start tracking
 
         kalman_tracker = {}
 
@@ -318,12 +332,8 @@ class ObjectDetection(CorePathvision):
 
                 od_preds = model(im_for_od)
                 pre, annot_labels = _pre_process_model_output(preds=od_preds, coco=coco)
-
-                LOGGER.info("annot labels: {}".format(annot_labels))
-
-                LOGGER.info("Model preds: {}".format(od_preds))
+                LOGGER.info("Annotation labels: {}".format(annot_labels))
                 # After we've processed the predictions, we're left with high accuracy predictions. There's a chance the model could predict the same object with high accuracy twice.
-                LOGGER.info("Model preds processed: {}".format(pre))
 
                 """
                 origin: original image as a PIL
@@ -413,163 +423,206 @@ class ObjectDetection(CorePathvision):
                     - If an object that's previously been tracked is missing on a single frame.
                 
                 '''
+
                 class_idxs = pre[0]['labels']
 
-                kalman_tracker = iterate_kalman_tracker(class_idxs, pre[0]['boxes'].detach(), kalman_tracker)
+                LOGGER.debug("Analysing: {}".format(class_idxs))
 
-                # '''
-                # Gradient calculation
-                # '''
-                #
-                # if LoadFromDisk == False:
-                #     for i, tensor in enumerate(class_idxs):
-                #         call_model_args = {class_idx_str: tensor.item()}
-                #         cats = coco.loadCats(coco.getCatIds())
-                #         cat_id = call_model_args[class_idx_str]
-                #         cat_name = next(cat['name'] for cat in cats if cat['id'] == cat_id)
-                #         LOGGER.debug("Category name for index value {}: {}".format(cat_id, cat_name))
-                #
-                #         if technique_key == "vanilla":
-                #             vanilla_mask_3d = vanilla_vision.GetMask(frame_data['crops'][i], _call_model_function,
-                #                                                      call_model_args)
-                #             heatmap_img, raw_gradients = pathvision.visualiseImageToHeatmap(image_3d=vanilla_mask_3d)
-                #             frame_data['vanilla']['gradients']['heatmap_3d'].append(heatmap_img)
-                #             frame_data['vanilla']['gradients']['raw'].append(raw_gradients)
-                #
-                #         elif technique_key == "smoothgrad":
-                #             smoothgrad_mask_3d = vanilla_vision.GetSmoothedMask(frame_data['crops'][i],
-                #                                                                 _call_model_function,
-                #                                                                 call_model_args)
-                #             frame_data['smoothgrad']['gradients']['heatmap_3d'].append(
-                #                 pathvision.visualiseImageToHeatmap(image_3d=smoothgrad_mask_3d))
-                #
-                #         LOGGER.debug("Completed image {} of {}".format(frames.index(frame) + 1, len(frames) + 1))
-                #         LOGGER.debug("Saving to disk")
-                #
-                #         '''
-                #         Checking that we have the same number of gradients in each category.
-                #         '''
-                #         vanilla_lengths = [len(frame_data['vanilla']['gradients'][key]) for key in
-                #                            ['heatmap_3d']]
-                #         smoothgrad_lengths = [len(frame_data['smoothgrad']['gradients'][key]) for key in
-                #                               ['heatmap_3d']]
-                #
-                #         if not all(len_list == vanilla_lengths[0] for len_list in vanilla_lengths) and \
-                #                 all(len_list == smoothgrad_lengths[0] for len_list in smoothgrad_lengths):
-                #             raise RuntimeError(PARAMETER_ERROR_MESSAGE['UNEQUAL_GRADIENT_COUNT'])
-                #     '''
-                #     DEBUG ONLY
-                #     - Once we've calculated the gradients and added them to the dict, we can save them to disk for convenience
-                #     '''
-                #     if debug:
-                #         if technique_key == "vanilla":
-                #             for i in range(len(frame_data['crops'])):
-                #                 np.save('pathvision/test/outs/vanilla/heatmap/heatmap_image{}.npy'.format(i),
-                #                         frame_data['vanilla']['gradients']['heatmap_3d'][i])
-                #                 np.save('pathvision/test/outs/vanilla/raw/raw_grad{}.npy'.format(i),
-                #                         vanilla_mask_3d)
-                #
-                #         elif technique_key == "smoothgrad":
-                #             for i in range(len(frame_data['crops'])):
-                #                 np.save('pathvision/test/outs/smoothgrad/heatmap/heatmap_image{}.npy'.format(i),
-                #                         frame_data['smoothgrad']['gradients']['heatmap_3d'][i])
-                #                 np.save('pathvision/test/outs/smoothgrad/raw/raw_grad{}.npy'.format(i),
-                #                         smoothgrad_mask_3d)
-                # else:
-                #     LOGGER.debug("Loading gradients from disk")
-                #     folder = folder_dict.get(gradient_technique)
-                #     # Loop through the files in the folder and load the numpy arrays
-                #     for i, filename in enumerate([f for f in os.listdir(folder + "heatmap/") if f.endswith('.npy')]):
-                #         np_arr = np.load(os.path.join(folder, 'heatmap/heatmap_image{}.npy'.format(i)))
-                #         frame_data[technique_key]['gradients']['heatmap_3d'].append(np_arr)
-                #
-                # if segmentation_technique == "Panoptic Deeplab":
-                #     cfg = get_cfg()
-                #     # add project-specific config (e.g., TensorMask) here if you're not running a model in detectron2's core library
-                #     cfg.merge_from_file(
-                #         model_zoo.get_config_file("COCO-PanopticSegmentation/panoptic_fpn_R_50_3x.yaml"))
-                #     cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.5  # set threshold for this model
-                #     # Find a model from detectron2's model zoo. You can use the https://dl.fbaipublicfiles... url as well
-                #     cfg.MODEL.DEVICE = 'cuda' if device.type == 'cuda' else 'cpu'
-                #     cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url(
-                #         "COCO-PanopticSegmentation/panoptic_fpn_R_50_3x.yaml")
-                #     predictor = DefaultPredictor(cfg)
-                #
-                #     masks = []
-                #
-                #     for i, crop_object in enumerate(frame_data['crops_on_origin']):
-                #         outputs = predictor(np.array(crop_object))
-                #         instances = outputs["instances"].to("cpu")
-                #         # We can be pretty certain the bounding box only has one object in it for the segmenter, so we use [0] to pick the first set of masks.
-                #         # If there's multiple objects, pred_masks would contain multiple arrays of mask arrays.
-                #         masks.append(instances.pred_masks[0].numpy().squeeze())
-                #
-                #     masked_gradients_list = []
-                #     masked_regions = []
-                #
-                #     # Loop through the masks and save each one as a separate image
-                #     for i, raw_mask in enumerate(masks):
-                #         # Convert the binary mask to a uint8 image (0s and 255s) for visualisation
-                #         mask = np.uint8(raw_mask * 255)
-                #         # Apply a bitwise-and operation to the original image to extract the masked region
-                #         original_base_image = Image.new("RGBA", frame_data['size'], 0)
-                #
-                #         percentage_overlap = calculate_overlap(predictor,
-                #                                                frame_data[technique_key]['gradients']['raw'][i],
-                #                                                frame_data['crops'][i])
-                #
-                #         frame_data[technique_key]['metrics']['overlap_ps'] = percentage_overlap
-                #
-                #         original_base_image.paste(frame_data[technique_key]['gradients']['heatmap_3d'][i],
-                #                                   frame_data['coords'][i])
-                #
-                #         # Extract the masked region from the main image.
-                #         masked_region = cv2.bitwise_and(im_arr[:, :, ::-1], im_arr[:, :, ::-1], mask=mask)
-                #
-                #         im_bgr = cv2.cvtColor(np.asarray(original_base_image), cv2.COLOR_BGR2BGRA)
-                #
-                #         # Apply the binary mask to the resized gradients to keep only the gradients that are within
-                #         # the segment
-                #         masked_gradients = cv2.bitwise_and(im_bgr, im_bgr, mask=mask)
-                #
-                #         if percentage_overlap > 50:
-                #             # We log an error. The array reads as [the frame, [the index of the error type]). We can then inspect the data on the front-end.
-                #             LOGGER.debug("Overlapping pixels is over 50%, writing to error JSON")
-                #             results['errors'].append([frames.index(frame), [1]])
-                #
-                #         if debug:
-                #             LOGGER.debug("Percentage of overlap: {}".format(percentage_overlap))
-                #             # LOGGER.debug("Total gradient sum {}".format(
-                #             #     np.sum(load_image_arr(pil_img=original_base_image), axis=2)))
-                #             LOGGER.debug("Writing debug images")
-                #             cv2.imwrite("debug/im_bgr/im_bgr_{}.png".format(time.time()), im_bgr)
-                #             cv2.imwrite("debug/masked/masked_{}.png".format(time.time()), masked_gradients)
-                #
-                #         # Save the masked region and the masked gradients as separate images
-                #
-                #         masked_regions.append(masked_region)
-                #         masked_gradients_list.append(masked_gradients)
-                #
-                #         # Now that we've made the crops, we can reduce the noise for the output image.
-                #
-                #     # Create a new transparent image with the size of the background image
-                #     output_image = Image.new('RGBA', im_pil.size, (0, 0, 0, 0))
-                #
-                #     # Loop through each gradient mask
-                #     for grad_mask in masked_gradients_list:
-                #         # Overlay the gradient mask onto the transparent image
-                #         grad_mask = to_pil(grad_mask).convert('RGBA')
-                #         output_image.alpha_composite(grad_mask)
-                #
-                #     # Paste the transparent image onto the background image
-                #     im_pil = im_pil.convert('RGBA')
-                #     im_pil.putalpha(255)
-                #     result_image = im_pil.copy()
-                #     result_image.paste(_reduce_opacity(output_image, 0.7), (0, 0), _reduce_opacity(output_image, 0.7))
-                #
-                #     if debug:
-                #         output_image.save("debug/output_image/output_image {}.png".format(time.time()))
-                #         result_image.save("debug/final_output/final_output {}.png".format(time.time()))
+                print(class_idxs)
+
+                # Classes that failed the kalman filer will be analysed
+                # class_errors: [class_idx, pred, ranked_bboxes[0][0], distance]
+                kalman_tracker, class_errors = iterate_kalman_tracker(class_idxs, pre[0]['boxes'].detach(),
+                                                                      kalman_tracker)
+
+                for error in class_errors:
+                    image = _draw_bounding_boxes(frame_data['origin'], error[1], [error[2]])
+
+                    if error[0] not in results["errors"].keys():
+                        results["errors"].setdefault(error[0], {"kalman": []})
+
+                    LOGGER.critical("Writing Kalman error: {}".format([frames.index(frame), image, error[0], error[3]]))
+                    results["errors"][error[0]]['kalman'].append([frames.index(frame), _pil_to_base64(image), error[0], error[3]])
+
+                LOGGER.debug("Classes to analyse: {}".format(class_errors))
+
+                class_idxs = class_errors
+
+                print(class_idxs)
+
+                class_errors = []
+
+                '''
+                Gradient calculation
+                '''
+                if len(class_errors) > 0:
+                    if LoadFromDisk == False:
+                        for i, idx in enumerate(class_idxs):
+                            call_model_args = {class_idx_str: idx.item()}
+                            cats = coco.loadCats(coco.getCatIds())
+                            cat_id = call_model_args[class_idx_str]
+                            cat_name = next(cat['name'] for cat in cats if cat['id'] == cat_id)
+                            LOGGER.debug("Category name for index value {}: {}".format(cat_id, cat_name))
+
+                            if technique_key == "vanilla":
+                                vanilla_mask_3d = vanilla_vision.GetMask(frame_data['crops'][i], _call_model_function,
+                                                                         call_model_args)
+                                heatmap_img, raw_gradients = pathvision.visualiseImageToHeatmap(
+                                    image_3d=vanilla_mask_3d)
+                                frame_data['vanilla']['gradients']['heatmap_3d'].append(heatmap_img)
+                                frame_data['vanilla']['gradients']['raw'].append(raw_gradients)
+
+                            elif technique_key == "smoothgrad":
+                                smoothgrad_mask_3d = vanilla_vision.GetSmoothedMask(frame_data['crops'][i],
+                                                                                    _call_model_function,
+                                                                                    call_model_args)
+                                frame_data['smoothgrad']['gradients']['heatmap_3d'].append(
+                                    pathvision.visualiseImageToHeatmap(image_3d=smoothgrad_mask_3d))
+
+                            LOGGER.debug("Completed image {} of {}".format(frames.index(frame) + 1, len(frames) + 1))
+                            LOGGER.debug("Saving to disk")
+
+                            '''
+                            Checking that we have the same number of gradients in each category.
+                            '''
+                            vanilla_lengths = [len(frame_data['vanilla']['gradients'][key]) for key in
+                                               ['heatmap_3d']]
+                            smoothgrad_lengths = [len(frame_data['smoothgrad']['gradients'][key]) for key in
+                                                  ['heatmap_3d']]
+
+                            if not all(len_list == vanilla_lengths[0] for len_list in vanilla_lengths) and \
+                                    all(len_list == smoothgrad_lengths[0] for len_list in smoothgrad_lengths):
+                                raise RuntimeError(PARAMETER_ERROR_MESSAGE['UNEQUAL_GRADIENT_COUNT'])
+                        '''
+                        DEBUG ONLY
+                        - Once we've calculated the gradients and added them to the dict, we can save them to disk for convenience
+                        '''
+                        if debug:
+                            if technique_key == "vanilla":
+                                for i in range(len(frame_data['crops'])):
+                                    np.save('pathvision/test/outs/vanilla/heatmap/heatmap_image{}.npy'.format(i),
+                                            frame_data['vanilla']['gradients']['heatmap_3d'][i])
+                                    np.save('pathvision/test/outs/vanilla/raw/raw_grad{}.npy'.format(i),
+                                            vanilla_mask_3d)
+
+                            elif technique_key == "smoothgrad":
+                                for i in range(len(frame_data['crops'])):
+                                    np.save('pathvision/test/outs/smoothgrad/heatmap/heatmap_image{}.npy'.format(i),
+                                            frame_data['smoothgrad']['gradients']['heatmap_3d'][i])
+                                    np.save('pathvision/test/outs/smoothgrad/raw/raw_grad{}.npy'.format(i),
+                                            smoothgrad_mask_3d)
+                    else:
+                        LOGGER.debug("Loading gradients from disk")
+                        folder = folder_dict.get(gradient_technique)
+                        # Loop through the files in the folder and load the numpy arrays
+                        for i, filename in enumerate(
+                                [f for f in os.listdir(folder + "heatmap/") if f.endswith('.npy')]):
+                            np_arr = np.load(os.path.join(folder, 'heatmap/heatmap_image{}.npy'.format(i)))
+                            frame_data[technique_key]['gradients']['heatmap_3d'].append(np_arr)
+
+                    if segmentation_technique == "Panoptic Deeplab":
+                        cfg = get_cfg()
+                        # add project-specific config (e.g., TensorMask) here if you're not running a model in detectron2's core library
+                        cfg.merge_from_file(
+                            model_zoo.get_config_file("COCO-PanopticSegmentation/panoptic_fpn_R_50_3x.yaml"))
+                        cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.5  # set threshold for this model
+                        # Find a model from detectron2's model zoo. You can use the https://dl.fbaipublicfiles... url as well
+                        cfg.MODEL.DEVICE = 'cuda' if device.type == 'cuda' else 'cpu'
+                        cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url(
+                            "COCO-PanopticSegmentation/panoptic_fpn_R_50_3x.yaml")
+                        predictor = DefaultPredictor(cfg)
+
+                        masks = []
+
+                        for i, crop_object in enumerate(frame_data['crops_on_origin']):
+                            outputs = predictor(np.array(crop_object))
+                            instances = outputs["instances"].to("cpu")
+                            # We can be pretty certain the bounding box only has one object in it for the segmenter, so we use [0] to pick the first set of masks.
+                            # If there's multiple objects, pred_masks would contain multiple arrays of mask arrays.
+                            if len(instances.get("pred_masks")) > 0:
+                                masks.append(instances.get("pred_masks")[0].numpy().squeeze())
+                            else:
+                                mask_shape = crop_object.size[::-1]  # Reverse width and height
+                                empty_mask = np.zeros(mask_shape, dtype=bool)
+                                masks.append(empty_mask)
+
+                        masked_gradients_list = []
+
+                        masked_regions = []
+
+                        # Loop through the masks and save each one as a separate image
+                        for i, raw_mask in enumerate(masks):
+                            # Convert the binary mask to a uint8 image (0s and 255s) for visualisation
+                            mask = np.uint8(raw_mask * 255)
+                            # Apply a bitwise-and operation to the original image to extract the masked region
+                            original_base_image = Image.new("RGBA", frame_data['size'], 0)
+
+                            percentage_overlap = calculate_overlap(predictor,
+                                                                   frame_data[technique_key]['gradients']['raw'][i],
+                                                                   frame_data['crops'][i])
+
+                            frame_data[technique_key]['metrics']['overlap_ps'] = percentage_overlap
+
+                            original_base_image.paste(frame_data[technique_key]['gradients']['heatmap_3d'][i],
+                                                      frame_data['coords'][i])
+
+                            # Extract the masked region from the main image.
+                            masked_region = cv2.bitwise_and(im_arr[:, :, ::-1], im_arr[:, :, ::-1], mask=mask)
+
+                            im_bgr = cv2.cvtColor(np.asarray(original_base_image), cv2.COLOR_BGR2BGRA)
+
+                            # Apply the binary mask to the resized gradients to keep only the gradients that are within
+                            # the segment
+                            masked_gradients = cv2.bitwise_and(im_bgr, im_bgr, mask=mask)
+
+                            if percentage_overlap > 50:
+                                # We log an error. The array reads as [the frame, [the index of the error type]). We can then inspect the data on the front-end.
+                                LOGGER.debug("Overlapping pixels is over 50%, writing to error JSON")
+
+                                if str(i) not in results["errors"].keys():
+                                    results["errors"].setdefault(str(i), {"gradient_overlap": []})
+
+                                LOGGER.critical(
+                                    "Writing JSON error: {}".format([frames.index(frame), _pil_to_base64(image), error[0], error[3]]))
+                                results["errors"][str(i)]['gradient_overlap'].append(
+                                    [frames.index(frame), percentage_overlap])
+
+
+                            if debug:
+                                LOGGER.debug("Percentage of overlap: {}".format(percentage_overlap))
+                                LOGGER.debug("Writing debug images")
+                                # cv2.imwrite("debug/im_bgr/im_bgr_{}.png".format(time.time()), im_bgr)
+                                # cv2.imwrite("debug/masked/masked_{}.png".format(time.time()), masked_gradients)
+
+                            # Save the masked region and the masked gradients as separate images
+
+                            masked_regions.append(masked_region)
+                            masked_gradients_list.append(masked_gradients)
+
+                            # Now that we've made the crops, we can reduce the noise for the output image.
+
+                        # Create a new transparent image with the size of the background image
+                        output_image = Image.new('RGBA', im_pil.size, (0, 0, 0, 0))
+
+                        # Loop through each gradient mask
+                        for grad_mask in masked_gradients_list:
+                            # Overlay the gradient mask onto the transparent image
+                            grad_mask = to_pil(grad_mask).convert('RGBA')
+                            output_image.alpha_composite(grad_mask)
+
+                        # Paste the transparent image onto the background image
+                        im_pil = im_pil.convert('RGBA')
+                        im_pil.putalpha(255)
+                        result_image = im_pil.copy()
+                        result_image.paste(_reduce_opacity(output_image, 0.7), (0, 0),
+                                           _reduce_opacity(output_image, 0.7))
+
+                        if debug:
+                            results['final_output'].append(_pil_to_base64(output_image))
+                            output_image.save("debug/output_image/output_image {}.png".format(time.time()))
+                            result_image.save("debug/final_output/final_output {}.png".format(time.time()))
         else:
             raise ValueError(PARAMETER_ERROR_MESSAGE['NO_MODEL'])
+
+
         return kalman_tracker
