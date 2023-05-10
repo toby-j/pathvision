@@ -28,6 +28,7 @@ import pathvision.core as pathvision
 from pathvision.core.meaurements import calculate_overlap
 import torchvision.transforms.functional as TF
 from pathvision.core.base import CorePathvision, INPUT_OUTPUT_GRADIENTS
+from pathvision.core.networking import sendResults
 from pathvision.core.types import Gradient, Segmentation, Trajectory, Labels, Models
 from pathvision.core.logger import logger as LOGGER
 from pathvision.core.tracking import iterate_kalman_tracker
@@ -180,10 +181,10 @@ def _reduce_opacity(im, opacity):
     im.putalpha(alpha)
     return im
 
+
 def _pil_to_base64(img):
     image_data = img.tobytes()
     return base64.b64encode(image_data).decode("utf-8")
-
 
 
 class ObjectDetection(CorePathvision):
@@ -442,7 +443,8 @@ class ObjectDetection(CorePathvision):
                         results["errors"].setdefault(error[0], {"kalman": []})
 
                     LOGGER.critical("Writing Kalman error: {}".format([frames.index(frame), image, error[0], error[3]]))
-                    results["errors"][error[0]]['kalman'].append([frames.index(frame), _pil_to_base64(image), error[0], error[3]])
+                    results["errors"][error[0]]['kalman'].append(
+                        [frames.index(frame), _pil_to_base64(image), error[0], error[3]])
 
                 LOGGER.debug("Classes to analyse: {}".format(class_errors))
 
@@ -583,10 +585,10 @@ class ObjectDetection(CorePathvision):
                                     results["errors"].setdefault(str(i), {"gradient_overlap": []})
 
                                 LOGGER.critical(
-                                    "Writing JSON error: {}".format([frames.index(frame), _pil_to_base64(image), error[0], error[3]]))
+                                    "Writing JSON error: {}".format(
+                                        [frames.index(frame), _pil_to_base64(image), error[0], error[3]]))
                                 results["errors"][str(i)]['gradient_overlap'].append(
                                     [frames.index(frame), percentage_overlap])
-
 
                             if debug:
                                 LOGGER.debug("Percentage of overlap: {}".format(percentage_overlap))
@@ -624,5 +626,4 @@ class ObjectDetection(CorePathvision):
         else:
             raise ValueError(PARAMETER_ERROR_MESSAGE['NO_MODEL'])
 
-
-        return kalman_tracker
+        sendResults(results)

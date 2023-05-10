@@ -1,13 +1,19 @@
 import requests
+import os
 
-def sendResults(results, authtoken):
+
+def sendResults(results):
     # Define the URL of your Next.js API endpoint
-    url = "https://your-nextjs-api-url.com/api/endpoint"
+    url = "https://mfum3gsz4cdntt4agk2ordm25q0xsioq.lambda-url.eu-west-2.on.aws/"
 
     # Define the payload data to be sent in the request body
+    payload = {
+        'workspace_uuid': os.environ.get("WORKSPACE_UUID"),
+        'authToken': os.environ.get("AUTH_TOKEN"),
+    }
 
     # Define the authentication token
-    token = "your-authentication-token"
+    token = os.environ.get('AUTH_TOKEN')
 
     # Set the request headers
     headers = {
