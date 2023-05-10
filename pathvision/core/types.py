@@ -7,10 +7,8 @@ else:
     # As natve StrEnum is only supported in 3.11, so we import a seperate package that handles it if client is on a lesser version
     from strenum import StrEnum
 
-
 class Segmentation(StrEnum):
     PANOPTIC_DEEPLAB = "Panoptic Deeplab"
-
 
 class Gradient(StrEnum):
     INTEGRATED_GRADIENTS = "IntegratedGradients"

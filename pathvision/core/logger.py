@@ -23,6 +23,6 @@ class CustomFormatter(logging.Formatter):
 
 logger = logging.getLogger("core")
 ch = logging.StreamHandler()
-ch.setLevel(logging.WARNING)
+ch.setLevel(logging.CRITICAL)
 ch.setFormatter(CustomFormatter())
 logger.addHandler(ch)
