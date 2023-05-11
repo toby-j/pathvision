@@ -176,3 +176,4 @@ widgetsnbextension==4.0.5
 win-inet-pton==1.1.0
 wincertstore==0.2
 yacs==0.1.8
+boto3
