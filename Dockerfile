@@ -16,8 +16,10 @@ COPY . .
 
 RUN pip install .
 
-# For production, we should build any third party model libraries in Pathvision's setup.py
-
 WORKDIR /pathvision/pathvision/models/detectron2
 
 RUN pip install .
+
+WORKDIR /pathvision
+
+CMD ["python", "main.py"]
