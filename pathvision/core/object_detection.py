@@ -429,8 +429,6 @@ class ObjectDetection(CorePathvision):
 
                 LOGGER.debug("Analysing: {}".format(class_idxs))
 
-                print(class_idxs)
-
                 # Classes that failed the kalman filer will be analysed
                 # class_errors: [class_idx, pred, ranked_bboxes[0][0], distance]
                 kalman_tracker, class_errors = iterate_kalman_tracker(class_idxs, pre[0]['boxes'].detach(),
@@ -448,16 +446,16 @@ class ObjectDetection(CorePathvision):
 
                 LOGGER.debug("Classes to analyse: {}".format(class_errors))
 
-                class_idxs = class_errors
-
-                print(class_idxs)
-
-                class_errors = []
+                # class_idxs = class_errors
+                #
+                # print()
+                #
+                # class_errors = []
 
                 '''
                 Gradient calculation
                 '''
-                if len(class_errors) > 0:
+                if len(class_idxs) > 0:
                     if LoadFromDisk == False:
                         for i, idx in enumerate(class_idxs):
                             call_model_args = {class_idx_str: idx.item()}
@@ -478,8 +476,10 @@ class ObjectDetection(CorePathvision):
                                 smoothgrad_mask_3d = vanilla_vision.GetSmoothedMask(frame_data['crops'][i],
                                                                                     _call_model_function,
                                                                                     call_model_args)
-                                frame_data['smoothgrad']['gradients']['heatmap_3d'].append(
-                                    pathvision.visualiseImageToHeatmap(image_3d=smoothgrad_mask_3d))
+                                heatmap_img, raw_gradients = pathvision.visualiseImageToHeatmap(
+                                    image_3d=smoothgrad_mask_3d)
+                                frame_data['smoothgrad']['gradients']['heatmap_3d'].append(heatmap_img)
+                                frame_data['smoothgrad']['gradients']['raw'].append(raw_gradients)
 
                             LOGGER.debug("Completed image {} of {}".format(frames.index(frame) + 1, len(frames) + 1))
                             LOGGER.debug("Saving to disk")
@@ -543,6 +543,7 @@ class ObjectDetection(CorePathvision):
                             # If there's multiple objects, pred_masks would contain multiple arrays of mask arrays.
                             if len(instances.get("pred_masks")) > 0:
                                 masks.append(instances.get("pred_masks")[0].numpy().squeeze())
+                            # Can't find an object in the segment, likely due to low resolution. Therefore, append an empty mask of Truth.
                             else:
                                 mask_shape = crop_object.size[::-1]  # Reverse width and height
                                 empty_mask = np.zeros(mask_shape, dtype=bool)
@@ -593,8 +594,8 @@ class ObjectDetection(CorePathvision):
                             if debug:
                                 LOGGER.debug("Percentage of overlap: {}".format(percentage_overlap))
                                 LOGGER.debug("Writing debug images")
-                                # cv2.imwrite("debug/im_bgr/im_bgr_{}.png".format(time.time()), im_bgr)
-                                # cv2.imwrite("debug/masked/masked_{}.png".format(time.time()), masked_gradients)
+                                cv2.imwrite("debug/im_bgr/im_bgr_{}.png".format(time.time()), im_bgr)
+                                cv2.imwrite("debug/masked/masked_{}.png".format(time.time()), masked_gradients)
 
                             # Save the masked region and the masked gradients as separate images
 
@@ -626,4 +627,5 @@ class ObjectDetection(CorePathvision):
         else:
             raise ValueError(PARAMETER_ERROR_MESSAGE['NO_MODEL'])
 
-        sendResults(results)
+        #
+        # sendResults(results)

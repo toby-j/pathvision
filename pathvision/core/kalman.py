@@ -7,6 +7,26 @@ if sys.version_info[0] != 3:
     print("This module requires Python 3")
     sys.exit(1)
 
+'''transitionMatrix: 
+    Each row of the transition matrix corresponds to an element of the state vector at time t, 
+    and each column corresponds to the same element at time t+1. The diagonal elements represent the current state of 
+    each variable, and the off-diagonal elements represent how the values of these variables evolve over time.
+
+    In particular, the non-zero elements of the transition matrix indicate how the state variables are expected to 
+    change over time. For example, the first row of the matrix specifies that the position in the x direction is 
+    expected to increase by an amount equal to the velocity in the x direction multiplied by the elapsed time between 
+    updates. Similarly, the fifth and sixth rows indicate that the width and height of the bounding box are expected 
+    to remain constant, while the seventh and eighth rows indicate that the velocity in the width and height 
+    directions are expected to remain constant as well.
+
+    The identity matrix on the right-hand side of the assignment sets the initial value of the transition matrix to an 
+    identity matrix, which assumes that the state variables are uncorrelated and evolve independently over time. The 
+    subsequent assignments update the elements of the transition matrix corresponding to the position, width, and height 
+    variables to reflect the expected changes in these variables due to the elapsed time between updates.
+
+    .correct() is used to update the state of the kalman filter
+'''
+
 
 class KalmanBB:
     global nstates, nmeasures, kfilt, SBBX, SBBY, SV_X, SV_Y, SBBW, SBBH, SV_W, SV_H, MBBX, MBBY, MBBW, MBBH

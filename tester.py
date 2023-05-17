@@ -31,9 +31,9 @@ def tester():
     frames.append(Image.open("pathvision/test/bike_test/image_9.jpg"))
 
     frame_list = []
-    frame_list_dir = os.listdir("debug/test_data/motorway2/")
+    frame_list_dir = os.listdir("debug/test_data/motorbikes/")
     for frame in frame_list_dir:
-        frame_list.append(Image.open("debug/test_data/motorway2/" + frame))
+        frame_list.append(Image.open("debug/test_data/motorbikes/" + frame))
 
     frame2.append(Image.open("pathvision/test/frame2.jpg"))
     # frames.append(Image.open("pathvision/test/frame.png"))

@@ -16,6 +16,8 @@ import math
 from pathvision.core import kalman
 import numpy as np
 from pathvision.core.logger import logger as LOGGER
+import json
+import pprint
 
 
 def _euclidean_distance(x1, y1, x2, y2):
@@ -56,15 +58,19 @@ def _rank_boxes(bboxes, target_bbox):
     ranked_bboxes = [(dist[0], dist[1], rank + 1) for rank, dist in enumerate(distances)]
     return ranked_bboxes
 
+def getpos(i, x,y,w,h):
+    return(np.float32([x[i],y[i],w[i],h[i]]))
 
 def _create_tracking_entry(class_idx, box, kalman_tracker):
     if len(kalman_tracker[class_idx].keys()) == 0:
         obj_dict = kalman_tracker[class_idx].setdefault("0", {})
     else:
         obj_dict = kalman_tracker[class_idx].setdefault(str(len(kalman_tracker[class_idx].keys())), {})
-    obj_dict['boxes'] = [[box]]
-    obj_dict.setdefault('kalman', kalman.KalmanBB()).init(np.float32(box))
-
+    if type(box) == "list":
+        box = box.tolist()
+    else:
+        obj_dict['boxes'] = [[box]]
+    obj_dict.setdefault('kalman', kalman.KalmanBB()).init(box)
 
 def iterate_kalman_tracker(class_idxs, bb_boxes, kalman_tracker):
     # We manually assume the framerate
@@ -86,45 +92,43 @@ def iterate_kalman_tracker(class_idxs, bb_boxes, kalman_tracker):
             boxes_to_place = class_bb_boxes.copy()
             # Convert our box tensor to lists, so we can safety remove top rank boxes once they've been appended
             boxes_to_place = [box.tolist() for box in boxes_to_place]
-            object_bbs = []
+            bbs_and_key = []
             # For how many objects of this class we're already tracking, we collect the end box of each. We then
             # have the latest position of these tracked objects. We use these to decide where to place our new
             # boxes.
 
             for key in kalman_tracker[class_idx].keys():
                 # Get the last box of each object
-                object_bbs.append(kalman_tracker[class_idx][key]['boxes'][0][:1][0])
+                bbs_and_key.append([kalman_tracker[class_idx][key]['boxes'][0][:1][0], key])
 
             # For each existing end box, see which of the new boxes is most appropriate to append
-            for i, box in enumerate(object_bbs):
-                ranked_bboxes = _rank_boxes(boxes_to_place, box)
+            for box_and_key in bbs_and_key:
+                ranked_bboxes = _rank_boxes(boxes_to_place,box_and_key[0])
 
-                # Append new location to object
-
-                kalman = kalman_tracker[class_idx][str(i)]["kalman"]
+                kalman = kalman_tracker[class_idx][box_and_key[1]]["kalman"]
                 x, y, w, h = ranked_bboxes[0][0]
+
                 tracked = kalman.track(x, y, w, h, dT)
-                pred = kalman.predict(dT)
 
                 LOGGER.debug("tracked position: {}".format(tracked))
-                LOGGER.debug("predicted position: {}".format(pred))
                 LOGGER.debug("Models bounding boxes: {}".format(ranked_bboxes[0][0]))
 
-                distance = calculate_euclidean_distance(pred, ranked_bboxes[0][0])
+                distance = calculate_euclidean_distance(tracked, ranked_bboxes[0][0])
 
                 LOGGER.debug("Distance between boxes: {}".format(distance))
 
                 if distance > 200:
                     LOGGER.debug("Distance was over 1000: {} for class".format(distance, class_idx))
-                    class_errors.append([class_idx, pred, ranked_bboxes[0][0], distance])
+                    class_errors.append([class_idx, tracked, ranked_bboxes[0][0], distance])
 
-                kalman_tracker[class_idx][str(i)]['boxes'].append(ranked_bboxes[0][0])
+                kalman_tracker[class_idx][box_and_key[1]]['boxes'].append(ranked_bboxes[0][0])
 
                 boxes_to_place.remove(ranked_bboxes[0][0])
 
                 # If we have less new boxes than total tracked objects, we'll run out of new boxes.
                 if len(boxes_to_place) == 0:
                     break
+            # pprint.pprint(kalman_tracker)
 
             # For remaining boxes, initialise a new object inside the class to begin tracking
             for box in boxes_to_place:
