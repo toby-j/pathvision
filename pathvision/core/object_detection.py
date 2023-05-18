@@ -446,24 +446,23 @@ class ObjectDetection(CorePathvision):
 
                 LOGGER.debug("Classes to analyse: {}".format(class_errors))
 
-                # class_idxs = class_errors
-                #
-                # print()
-                #
-                # class_errors = []
+                print(class_errors)
+
+                class_idxs = [error_obj[0] for error_obj in class_errors]
+
 
                 '''
                 Gradient calculation
                 '''
-                if len(class_idxs) > 0:
+                if len(class_errors) > 0:
                     if LoadFromDisk == False:
                         for i, idx in enumerate(class_idxs):
-                            call_model_args = {class_idx_str: idx.item()}
+                            call_model_args = {class_idx_str: idx}
                             cats = coco.loadCats(coco.getCatIds())
                             cat_id = call_model_args[class_idx_str]
                             cat_name = next(cat['name'] for cat in cats if cat['id'] == cat_id)
                             LOGGER.debug("Category name for index value {}: {}".format(cat_id, cat_name))
-
+                            print(technique_key)
                             if technique_key == "vanilla":
                                 vanilla_mask_3d = vanilla_vision.GetMask(frame_data['crops'][i], _call_model_function,
                                                                          call_model_args)
@@ -480,6 +479,8 @@ class ObjectDetection(CorePathvision):
                                     image_3d=smoothgrad_mask_3d)
                                 frame_data['smoothgrad']['gradients']['heatmap_3d'].append(heatmap_img)
                                 frame_data['smoothgrad']['gradients']['raw'].append(raw_gradients)
+                            else:
+                                raise RuntimeError(INCORRECT_CONFIG)
 
                             LOGGER.debug("Completed image {} of {}".format(frames.index(frame) + 1, len(frames) + 1))
                             LOGGER.debug("Saving to disk")
@@ -501,14 +502,14 @@ class ObjectDetection(CorePathvision):
                         '''
                         if debug:
                             if technique_key == "vanilla":
-                                for i in range(len(frame_data['crops'])):
+                                for i in range(len(class_idxs)):
                                     np.save('pathvision/test/outs/vanilla/heatmap/heatmap_image{}.npy'.format(i),
                                             frame_data['vanilla']['gradients']['heatmap_3d'][i])
                                     np.save('pathvision/test/outs/vanilla/raw/raw_grad{}.npy'.format(i),
                                             vanilla_mask_3d)
 
                             elif technique_key == "smoothgrad":
-                                for i in range(len(frame_data['crops'])):
+                                for i in range(len(class_idxs)):
                                     np.save('pathvision/test/outs/smoothgrad/heatmap/heatmap_image{}.npy'.format(i),
                                             frame_data['smoothgrad']['gradients']['heatmap_3d'][i])
                                     np.save('pathvision/test/outs/smoothgrad/raw/raw_grad{}.npy'.format(i),
@@ -523,6 +524,7 @@ class ObjectDetection(CorePathvision):
                             frame_data[technique_key]['gradients']['heatmap_3d'].append(np_arr)
 
                     if segmentation_technique == "Panoptic Deeplab":
+                        print("segmenting")
                         cfg = get_cfg()
                         # add project-specific config (e.g., TensorMask) here if you're not running a model in detectron2's core library
                         cfg.merge_from_file(
@@ -585,9 +587,6 @@ class ObjectDetection(CorePathvision):
                                 if str(i) not in results["errors"].keys():
                                     results["errors"].setdefault(str(i), {"gradient_overlap": []})
 
-                                LOGGER.critical(
-                                    "Writing JSON error: {}".format(
-                                        [frames.index(frame), _pil_to_base64(image), error[0], error[3]]))
                                 results["errors"][str(i)]['gradient_overlap'].append(
                                     [frames.index(frame), percentage_overlap])
 

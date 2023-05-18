@@ -1,4 +1,4 @@
-"""A setuptools module for the Saliency library.
+"""A setuptools module for Pathvision
 
 See:
 https://packaging.python.org/en/latest/distributing.html
