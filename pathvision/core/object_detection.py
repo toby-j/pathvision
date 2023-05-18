@@ -13,7 +13,10 @@
 # limitations under the License.
 import base64
 import time
+from datetime import datetime
+
 import cv2
+import csv
 from PIL import Image, ImageEnhance, ImageDraw
 import numpy as np
 import os
@@ -86,6 +89,25 @@ def load_image_arr(file_path='', pil_img=None):
         raise Exception
     im = np.asarray(im)
     return im
+
+
+def _write_to_csv(frame, class_name, percentage_overlap, csv_name):
+    # Get the current timestamp
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # Check if the file exists
+    file_exists = os.path.isfile(csv_name + ".csv")
+
+    # Open the CSV file in append mode
+    with open(csv_name + ".csv", 'a', newline='') as file:
+        writer = csv.writer(file)
+
+        # If the file doesn't exist, write the header row
+        if not file_exists:
+            writer.writerow(['Timestamp', 'String Value', 'Integer Value'])
+
+        # Write the data row to the CSV file
+        writer.writerow([frame, timestamp, class_name, percentage_overlap])
 
 
 def _draw_bounding_boxes(image, pred, model_bb, thickness=2):
@@ -308,7 +330,7 @@ class ObjectDetection(CorePathvision):
                 model = torchvision.models.detection.fasterrcnn_resnet50_fpn(pretrained=True, progress=True,
                                                                              num_classes=91, weights_backbone=True)
         else:
-            print("We need to load their model and their dataset")
+            raise PARAMETER_ERROR_MESSAGE['PATHVISION CURRENTLY ONLY SUPPORTS PRE-TRAINED MODEL FASTERCNN_RESNET50_FPN']
 
         # Load annotations into memory
         coco_annotations = 'pathvision/data/instances_val2017.json'
@@ -375,6 +397,7 @@ class ObjectDetection(CorePathvision):
                     "smoothgrad": {
                         "gradients": {
                             "heatmap_3d": [],
+                            "raw": []
                         },
                         "result_images": {
                             "full": [],
@@ -399,6 +422,7 @@ class ObjectDetection(CorePathvision):
                 # Get the size of the original image as our background canvas
                 frame_data['size'] = tuple(reversed(im_tensor[0].shape[-2:]))
                 frame_data['origin'] = im_pil
+
                 # For the number of label's we
                 for i in range(len(pre[0]['labels'])):
                     cropped_image, bb_coords = _crop_frame(im_tensor, pre[0]['boxes'][i].tolist())
@@ -434,30 +458,25 @@ class ObjectDetection(CorePathvision):
                 kalman_tracker, class_errors = iterate_kalman_tracker(class_idxs, pre[0]['boxes'].detach(),
                                                                       kalman_tracker)
 
-                for error in class_errors:
-                    image = _draw_bounding_boxes(frame_data['origin'], error[1], [error[2]])
-
-                    if error[0] not in results["errors"].keys():
-                        results["errors"].setdefault(error[0], {"kalman": []})
-
-                    LOGGER.critical("Writing Kalman error: {}".format([frames.index(frame), image, error[0], error[3]]))
-                    results["errors"][error[0]]['kalman'].append(
-                        [frames.index(frame), _pil_to_base64(image), error[0], error[3]])
+                # for error in class_errors:
+                #     image = _draw_bounding_boxes(frame_data['origin'], error[1], [error[2]])
+                #
+                #     if error[0] not in results["errors"].keys():
+                #         results["errors"].setdefault(error[0], {"kalman": []})
+                #
+                #     LOGGER.critical("Writing Kalman error: {}".format([frames.index(frame), image, error[0], error[3]]))
+                #     results["errors"][error[0]]['kalman'].append(
+                #         [frames.index(frame), _pil_to_base64(image), error[0], error[3]])
 
                 LOGGER.debug("Classes to analyse: {}".format(class_errors))
-
-                print(class_errors)
-
-                class_idxs = [error_obj[0] for error_obj in class_errors]
-
 
                 '''
                 Gradient calculation
                 '''
                 if len(class_errors) > 0:
                     if LoadFromDisk == False:
-                        for i, idx in enumerate(class_idxs):
-                            call_model_args = {class_idx_str: idx}
+                        for i, tensor in enumerate(class_idxs):
+                            call_model_args = {class_idx_str: tensor.item()}
                             cats = coco.loadCats(coco.getCatIds())
                             cat_id = call_model_args[class_idx_str]
                             cat_name = next(cat['name'] for cat in cats if cat['id'] == cat_id)
@@ -589,6 +608,9 @@ class ObjectDetection(CorePathvision):
 
                                 results["errors"][str(i)]['gradient_overlap'].append(
                                     [frames.index(frame), percentage_overlap])
+
+                                _write_to_csv(frames.index(frame), coco.loadCats(class_idxs[i].item())[0]['name'], percentage_overlap)
+
 
                             if debug:
                                 LOGGER.debug("Percentage of overlap: {}".format(percentage_overlap))

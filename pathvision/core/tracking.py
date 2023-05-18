@@ -19,6 +19,8 @@ from pathvision.core.logger import logger as LOGGER
 import json
 import pprint
 
+from pathvision.core.object_detection import _write_to_csv
+
 
 def _euclidean_distance(x1, y1, x2, y2):
     return math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
@@ -117,8 +119,9 @@ def iterate_kalman_tracker(class_idxs, bb_boxes, kalman_tracker):
 
                 LOGGER.debug("Distance between boxes: {}".format(distance))
 
-                if distance > 200:
+                if distance > 1500:
                     LOGGER.debug("Distance was over 1000: {} for class".format(distance, class_idx))
+                    _write_to_csv(0, 2, distance, "kalman_tracker_log")
                     class_errors.append([class_idx, tracked, ranked_bboxes[0][0], distance])
 
                 kalman_tracker[class_idx][box_and_key[1]]['boxes'].append(ranked_bboxes[0][0])
