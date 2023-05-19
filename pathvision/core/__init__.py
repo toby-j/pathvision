@@ -5,3 +5,4 @@ from .types import *
 from .visualisation import *
 from .vanilla import *
 from .tracking import *
+from .utils import *

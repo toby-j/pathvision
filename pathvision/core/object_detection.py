@@ -22,6 +22,8 @@ import numpy as np
 import os
 import io
 import logging
+import torchvision
+import torch
 from pycocotools.coco import COCO
 from torchvision.transforms import ToPILImage
 from detectron2 import model_zoo
@@ -35,9 +37,7 @@ from pathvision.core.networking import sendResults
 from pathvision.core.types import Gradient, Segmentation, Trajectory, Labels, Models
 from pathvision.core.logger import logger as LOGGER
 from pathvision.core.tracking import iterate_kalman_tracker
-import torchvision
-import torch
-
+from pathvision.core.utils import write_to_csv
 """
 Finds the prime factors for a given integer RSA modulus n, where the range
 between the two prime factors is less than (64n)^1/4.
@@ -89,25 +89,6 @@ def load_image_arr(file_path='', pil_img=None):
         raise Exception
     im = np.asarray(im)
     return im
-
-
-def _write_to_csv(frame, class_name, percentage_overlap, csv_name):
-    # Get the current timestamp
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    # Check if the file exists
-    file_exists = os.path.isfile(csv_name + ".csv")
-
-    # Open the CSV file in append mode
-    with open(csv_name + ".csv", 'a', newline='') as file:
-        writer = csv.writer(file)
-
-        # If the file doesn't exist, write the header row
-        if not file_exists:
-            writer.writerow(['Timestamp', 'String Value', 'Integer Value'])
-
-        # Write the data row to the CSV file
-        writer.writerow([frame, timestamp, class_name, percentage_overlap])
 
 
 def _draw_bounding_boxes(image, pred, model_bb, thickness=2):
@@ -609,21 +590,14 @@ class ObjectDetection(CorePathvision):
                                 results["errors"][str(i)]['gradient_overlap'].append(
                                     [frames.index(frame), percentage_overlap])
 
-                                _write_to_csv(frames.index(frame), coco.loadCats(class_idxs[i].item())[0]['name'], percentage_overlap)
+                                write_to_csv(frames.index(frame), coco.loadCats(class_idxs[i].item())[0]['name'], percentage_overlap)
 
 
                             if debug:
                                 LOGGER.debug("Percentage of overlap: {}".format(percentage_overlap))
-                                LOGGER.debug("Writing debug images")
-                                cv2.imwrite("debug/im_bgr/im_bgr_{}.png".format(time.time()), im_bgr)
-                                cv2.imwrite("debug/masked/masked_{}.png".format(time.time()), masked_gradients)
-
-                            # Save the masked region and the masked gradients as separate images
 
                             masked_regions.append(masked_region)
                             masked_gradients_list.append(masked_gradients)
-
-                            # Now that we've made the crops, we can reduce the noise for the output image.
 
                         # Create a new transparent image with the size of the background image
                         output_image = Image.new('RGBA', im_pil.size, (0, 0, 0, 0))
@@ -638,10 +612,20 @@ class ObjectDetection(CorePathvision):
                         im_pil = im_pil.convert('RGBA')
                         im_pil.putalpha(255)
                         result_image = im_pil.copy()
+                        # Now that we've made the crops, we can reduce the noise for the output image.
                         result_image.paste(_reduce_opacity(output_image, 0.7), (0, 0),
                                            _reduce_opacity(output_image, 0.7))
 
                         if debug:
+                            final_output_dir = "debug/final_image"
+                            output_image_dir = "debug/output_image"
+
+                            if not os.path.exists(output_image_dir):
+                                os.makedirs(output_image_dir)
+
+                            if not os.path.exists(final_output_dir):
+                                os.makedirs(final_output_dir)
+
                             results['final_output'].append(_pil_to_base64(output_image))
                             output_image.save("debug/output_image/output_image {}.png".format(time.time()))
                             result_image.save("debug/final_output/final_output {}.png".format(time.time()))
