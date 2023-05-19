@@ -2,7 +2,7 @@
 
 Using a Kalman Filter based object-spesific tracking algorithm with gradient-based 
 
-![Pathvision gif demo](.docs/assets/demo.gif)
+![Pathvision gif demo](docs/assets/demo.gif)
 
 ## Prerequisites
 - Python 3.9+
