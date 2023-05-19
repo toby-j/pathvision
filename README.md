@@ -16,6 +16,8 @@ These instructions are for **Microsoft Windows 10/11** (However may also work on
 ### **Step 0: Clone the repository**
 Navigate to the root direction and run:
 ```bash
+git clone https://github.com/toby-j/pathvision.git
+cd pathvision
 pip install .
 ```
 This will run the `setup.py` file which'll install all of Pathvision's dependencies as spesified in `requirements.txt`.
