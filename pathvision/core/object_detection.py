@@ -38,15 +38,6 @@ from pathvision.core.types import Gradient, Segmentation, Trajectory, Labels, Mo
 from pathvision.core.logger import logger as LOGGER
 from pathvision.core.tracking import iterate_kalman_tracker
 from pathvision.core.utils import write_to_csv
-"""
-Finds the prime factors for a given integer RSA modulus n, where the range
-between the two prime factors is less than (64n)^1/4.
-
-:param n: The modulus to factorize.
-:param range_limit: Optionally, a range limit that can be specified to
-show if the assumption will hold.
-:return: Either the integers p and q in a Tuple, or None.
-"""
 
 to_pil = ToPILImage()
 
@@ -323,7 +314,7 @@ class ObjectDetection(CorePathvision):
             "final_output": []
         }
 
-        kalman_tracker = {}
+        kalman_tracker_dict = {}
 
         if model:
             model.eval()
@@ -436,8 +427,8 @@ class ObjectDetection(CorePathvision):
 
                 # Classes that failed the kalman filer will be analysed
                 # class_errors: [class_idx, pred, ranked_bboxes[0][0], distance]
-                kalman_tracker, class_errors = iterate_kalman_tracker(class_idxs, pre[0]['boxes'].detach(),
-                                                                      kalman_tracker)
+                kalman_tracker_dict, class_errors = iterate_kalman_tracker(class_idxs, pre[0]['boxes'].detach(),
+                                                                      kalman_tracker_dict)
 
                 # for error in class_errors:
                 #     image = _draw_bounding_boxes(frame_data['origin'], error[1], [error[2]])
@@ -531,7 +522,9 @@ class ObjectDetection(CorePathvision):
                             model_zoo.get_config_file("COCO-PanopticSegmentation/panoptic_fpn_R_50_3x.yaml"))
                         cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.5  # set threshold for this model
                         # Find a model from detectron2's model zoo. You can use the https://dl.fbaipublicfiles... url as well
-                        cfg.MODEL.DEVICE = 'cuda' if device.type == 'cuda' else 'cpu'
+                        cfg.MODEL.DEVICE = 'cpu'
+                        # If you have a GPU, PyTorch compiled with CUDA and a supported version
+                        # cfg.MODEL.DEVICE = 'cuda' if device.type == 'cuda' else 'cpu'
                         cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url(
                             "COCO-PanopticSegmentation/panoptic_fpn_R_50_3x.yaml")
                         predictor = DefaultPredictor(cfg)
@@ -580,6 +573,9 @@ class ObjectDetection(CorePathvision):
                             # the segment
                             masked_gradients = cv2.bitwise_and(im_bgr, im_bgr, mask=mask)
 
+                            write_to_csv(csv_name="kalman_log", directory="debug/logs/gradient_overlap", class_idx=class_idxs[i].item(),
+                                         instance=i, percentage_overlap=percentage_overlap)
+
                             if percentage_overlap > 50:
                                 # We log an error. The array reads as [the frame, [the index of the error type]). We can then inspect the data on the front-end.
                                 LOGGER.debug("Overlapping pixels is over 50%, writing to error JSON")
@@ -589,9 +585,6 @@ class ObjectDetection(CorePathvision):
 
                                 results["errors"][str(i)]['gradient_overlap'].append(
                                     [frames.index(frame), percentage_overlap])
-
-                                write_to_csv(frames.index(frame), coco.loadCats(class_idxs[i].item())[0]['name'], percentage_overlap)
-
 
                             if debug:
                                 LOGGER.debug("Percentage of overlap: {}".format(percentage_overlap))

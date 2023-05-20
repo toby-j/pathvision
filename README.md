@@ -1,6 +1,6 @@
 # Pathvision: An Explainable AI Method for Object Detection models
 
-Using a Kalman Filter based object-spesific tracking algorithm with gradient-based 
+Using an object-specific tracking algorithm with state-of-the-art gradient-based Explainable AI techniques to identify errors in Object Detection models 
 
 ![Pathvision gif demo](docs/assets/demo.gif)
 

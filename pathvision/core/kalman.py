@@ -28,7 +28,7 @@ if sys.version_info[0] != 3:
 '''
 
 
-class KalmanBB:
+class KalmanTracker:
     global nstates, nmeasures, kfilt, SBBX, SBBY, SV_X, SV_Y, SBBW, SBBH, SV_W, SV_H, MBBX, MBBY, MBBW, MBBH
     nstates = 8  # bbx, bby, vx, vy, bbw, bbh, vw, bh (8x8 matrix)
     nmeasures = 4  # bbx, bby, bbw, bbh (4x4 matrix)

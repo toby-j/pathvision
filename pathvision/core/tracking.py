@@ -20,6 +20,7 @@ from pathvision.core.logger import logger as LOGGER
 import json
 import pprint
 
+
 def _euclidean_distance(x1, y1, x2, y2):
     return math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
 
@@ -58,8 +59,10 @@ def _rank_boxes(bboxes, target_bbox):
     ranked_bboxes = [(dist[0], dist[1], rank + 1) for rank, dist in enumerate(distances)]
     return ranked_bboxes
 
-def getpos(i, x,y,w,h):
-    return(np.float32([x[i],y[i],w[i],h[i]]))
+
+def getpos(i, x, y, w, h):
+    return (np.float32([x[i], y[i], w[i], h[i]]))
+
 
 def _create_tracking_entry(class_idx, box, kalman_tracker):
     if len(kalman_tracker[class_idx].keys()) == 0:
@@ -70,9 +73,10 @@ def _create_tracking_entry(class_idx, box, kalman_tracker):
         box = box.tolist()
     else:
         obj_dict['boxes'] = [[box]]
-    obj_dict.setdefault('kalman', kalman.KalmanBB()).init(box)
+    obj_dict.setdefault('kalman', kalman.KalmanTracker()).init(box)
 
-def iterate_kalman_tracker(class_idxs, bb_boxes, kalman_tracker):
+
+def iterate_kalman_tracker(class_idxs, bb_boxes, kalman_tracker_dict):
     # We manually assume the framerate
     fps = 24.
     dT = (1 / fps)
@@ -86,7 +90,7 @@ def iterate_kalman_tracker(class_idxs, bb_boxes, kalman_tracker):
         for box_idx in class_count:
             class_bb_boxes.append(bb_boxes[box_idx])
         # For each class there's already being tracked
-        if class_idx in kalman_tracker:
+        if class_idx in kalman_tracker_dict:
             # We create a copy because we'll remove boxes that have been appended to a tracked object.
             # Therefore, any left over in this variable is our new objects that the model is not yet tracking.
             boxes_to_place = class_bb_boxes.copy()
@@ -97,32 +101,37 @@ def iterate_kalman_tracker(class_idxs, bb_boxes, kalman_tracker):
             # have the latest position of these tracked objects. We use these to decide where to place our new
             # boxes.
 
-            for key in kalman_tracker[class_idx].keys():
+            for key in kalman_tracker_dict[class_idx].keys():
                 # Get the last box of each object
-                bbs_and_key.append([kalman_tracker[class_idx][key]['boxes'][0][:1][0], key])
+                bbs_and_key.append([kalman_tracker_dict[class_idx][key]['boxes'][0][:1][0], key])
 
             # For each existing end box, see which of the new boxes is most appropriate to append
             for box_and_key in bbs_and_key:
-                ranked_bboxes = _rank_boxes(boxes_to_place,box_and_key[0])
-
-                kalman = kalman_tracker[class_idx][box_and_key[1]]["kalman"]
+                ranked_bboxes = _rank_boxes(boxes_to_place, box_and_key[0])
+                # Get the Kalman tracker instance for this object
+                kalman = kalman_tracker_dict[class_idx][box_and_key[1]]["kalman"]
                 x, y, w, h = ranked_bboxes[0][0]
-
+                # Iterate Kalman tracker
+                predicted = kalman.predict(dT)
                 tracked = kalman.track(x, y, w, h, dT)
 
                 LOGGER.debug("tracked position: {}".format(tracked))
+                LOGGER.debug("Predicted position: {}".format(predicted))
                 LOGGER.debug("Models bounding boxes: {}".format(ranked_bboxes[0][0]))
 
-                distance = calculate_euclidean_distance(tracked, ranked_bboxes[0][0])
+                distance = calculate_euclidean_distance(predicted, ranked_bboxes[0][0])
 
                 LOGGER.debug("Distance between boxes: {}".format(distance))
 
-                if distance > 1500:
+                if distance > 3000:
                     LOGGER.debug("Distance was over 1000: {} for class".format(distance, class_idx))
-                    write_to_csv(0, 2, distance, "kalman_tracker_log")
                     class_errors.append([class_idx, tracked, ranked_bboxes[0][0], distance])
 
-                kalman_tracker[class_idx][box_and_key[1]]['boxes'].append(ranked_bboxes[0][0])
+                write_to_csv(csv_name="kalman_log", directory="debug/logs/kalman", class_idx=class_idx,
+                             instance=box_and_key[1], predicted=predicted, ranked_bboxes=ranked_bboxes[0][0],
+                             distance=distance)
+
+                kalman_tracker_dict[class_idx][box_and_key[1]]['boxes'].append(ranked_bboxes[0][0])
 
                 boxes_to_place.remove(ranked_bboxes[0][0])
 
@@ -134,13 +143,13 @@ def iterate_kalman_tracker(class_idxs, bb_boxes, kalman_tracker):
             # For remaining boxes, initialise a new object inside the class to begin tracking
             for box in boxes_to_place:
                 # Are any of these new objects very close to any previously tracked?
-                _create_tracking_entry(class_idx, box, kalman_tracker)
+                _create_tracking_entry(class_idx, box, kalman_tracker_dict)
 
         else:
             # We're not yet tracking this class.
             # For our box we have for this class, initialise a new tracking entry.
-            kalman_tracker.setdefault(class_idx, {})
+            kalman_tracker_dict.setdefault(class_idx, {})
             for box in class_bb_boxes:
-                _create_tracking_entry(class_idx, box, kalman_tracker)
+                _create_tracking_entry(class_idx, box, kalman_tracker_dict)
 
-    return kalman_tracker, class_errors
+    return kalman_tracker_dict, class_errors
