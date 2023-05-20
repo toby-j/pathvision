@@ -453,7 +453,6 @@ class ObjectDetection(CorePathvision):
                             cat_id = call_model_args[class_idx_str]
                             cat_name = next(cat['name'] for cat in cats if cat['id'] == cat_id)
                             LOGGER.debug("Category name for index value {}: {}".format(cat_id, cat_name))
-                            print(technique_key)
                             if technique_key == "vanilla":
                                 vanilla_mask_3d = vanilla_vision.GetMask(frame_data['crops'][i], _call_model_function,
                                                                          call_model_args)
@@ -515,7 +514,6 @@ class ObjectDetection(CorePathvision):
                             frame_data[technique_key]['gradients']['heatmap_3d'].append(np_arr)
 
                     if segmentation_technique == "Panoptic Deeplab":
-                        print("segmenting")
                         cfg = get_cfg()
                         # add project-specific config (e.g., TensorMask) here if you're not running a model in detectron2's core library
                         cfg.merge_from_file(
@@ -589,6 +587,18 @@ class ObjectDetection(CorePathvision):
                             if debug:
                                 LOGGER.debug("Percentage of overlap: {}".format(percentage_overlap))
 
+                                box_gradients_dir = "debug/box_gradients"
+                                masked_gradients_dir = "debug/masked_gradients"
+
+                                if not os.path.exists(box_gradients_dir):
+                                    os.makedirs(box_gradients_dir)
+
+                                if not os.path.exists(masked_gradients_dir):
+                                    os.makedirs(masked_gradients_dir)
+
+                                cv2.imwrite("debug/box_gradients/im_bgr_{}.png".format(time.time()), im_bgr)
+                                cv2.imwrite("debug/masked/masked_{}.png".format(time.time()), masked_gradients)
+
                             masked_regions.append(masked_region)
                             masked_gradients_list.append(masked_gradients)
 
@@ -625,5 +635,5 @@ class ObjectDetection(CorePathvision):
         else:
             raise ValueError(PARAMETER_ERROR_MESSAGE['NO_MODEL'])
 
-        #
+        # Send results to S3
         # sendResults(results)

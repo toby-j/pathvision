@@ -1,11 +1,6 @@
-import argparse
 import cv2 as cv
 import numpy as np
 import sys
-
-if sys.version_info[0] != 3:
-    print("This module requires Python 3")
-    sys.exit(1)
 
 '''transitionMatrix: 
     Each row of the transition matrix corresponds to an element of the state vector at time t, 
@@ -184,7 +179,7 @@ class KalmanTracker:
             pred = self.predict(dT)
             cpred = self.correct(pred[0], pred[1], pred[2], pred[3], False)
         else:
-            pred = self.predict(dT)
+            self.predict(dT)
             cpred = self.correct(bbx, bby, bbw, bbh, False)
         return cpred
 

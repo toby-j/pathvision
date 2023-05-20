@@ -49,10 +49,10 @@ SHAPE_ERROR_MESSAGE = {
 
 
 class CorePathvision(object):
-  r"""Base class for saliency methods. Alone, this class doesn't do anything."""
+    r"""Base class for saliency methods. Alone, this class doesn't do anything."""
 
-  def GetMask(self, x_value, call_model_function, call_model_args=None):
-    """Returns an unsmoothed mask.
+    def GetMask(self, x_value, call_model_function, call_model_args=None):
+        """Returns an unsmoothed mask.
 
     Args:
       x_value: Input ndarray.
@@ -74,17 +74,17 @@ class CorePathvision(object):
         function, for every call of the model.
 
     """
-    raise NotImplementedError('A derived class should implemented GetMask()')
+        raise NotImplementedError('A derived class should implemented GetMask()')
 
-  def GetSmoothedMask(self,
-                      x_value,
-                      call_model_function,
-                      call_model_args=None,
-                      stdev_spread=.15,
-                      nsamples=25,
-                      magnitude=True,
-                      **kwargs):
-    """Returns a mask that is smoothed with the SmoothGrad method.
+    def GetSmoothedMask(self,
+                        x_value,
+                        call_model_function,
+                        call_model_args=None,
+                        stdev_spread=.15,
+                        nsamples=25,
+                        magnitude=True,
+                        **kwargs):
+        """Returns a mask that is smoothed with the SmoothGrad method.
 
     Args:
       x_value: Input ndarray.
@@ -110,23 +110,23 @@ class CorePathvision(object):
       magnitude: If true, computes the sum of squares of gradients instead of
                  just the sum. Defaults to true.
     """
-    stdev = stdev_spread * (np.max(x_value) - np.min(x_value))
+        stdev = stdev_spread * (np.max(x_value) - np.min(x_value))
 
-    total_gradients = np.zeros_like(x_value, dtype=np.float32)
-    for _ in range(nsamples):
-      noise = np.random.normal(0, stdev, x_value.shape)
-      x_plus_noise = x_value + noise
-      grad = self.GetMask(x_plus_noise, call_model_function, call_model_args,
-                          **kwargs)
-      if magnitude:
-        total_gradients += (grad * grad)
-      else:
-        total_gradients += grad
+        total_gradients = np.zeros_like(x_value, dtype=np.float32)
+        for _ in range(nsamples):
+            noise = np.random.normal(0, stdev, x_value.shape)
+            x_plus_noise = x_value + noise
+            grad = self.GetMask(x_plus_noise, call_model_function, call_model_args,
+                                **kwargs)
+            if magnitude:
+                total_gradients += (grad * grad)
+            else:
+                total_gradients += grad
 
-    return total_gradients / nsamples
+        return total_gradients / nsamples
 
-  def format_and_check_call_model_output(self, output, input_shape, expected_keys):
-    """Converts keys in the output into an np.ndarray, and confirms its shape.
+    def format_and_check_call_model_output(self, output, input_shape, expected_keys):
+        """Converts keys in the output into an np.ndarray, and confirms its shape.
 
     Args:
       output: The output dictionary of data to be formatted.
@@ -135,18 +135,18 @@ class CorePathvision(object):
 
     Raises:
         ValueError: If output shapes do not match expected shape."""
-    # If key is in check_full_shape, the shape should be equal to the input shape (e.g.
-    # INPUT_OUTPUT_GRADIENTS, which gives gradients for each value of the input). Otherwise,
-    # only checks the outermost dimension of output to match input_shape (i.e. the batch size
-    # should be the same).
-    check_full_shape = [INPUT_OUTPUT_GRADIENTS]
-    for expected_key in expected_keys:
-      output[expected_key] = np.asarray(output[expected_key])
-      expected_shape = input_shape
-      actual_shape = output[expected_key].shape
-      if expected_key not in check_full_shape:
-        expected_shape = expected_shape[0]
-        actual_shape = actual_shape[0]
-      if expected_shape != actual_shape:
-        raise ValueError(SHAPE_ERROR_MESSAGE[expected_key].format(
-                       expected_shape, actual_shape))
+        # If key is in check_full_shape, the shape should be equal to the input shape (e.g.
+        # INPUT_OUTPUT_GRADIENTS, which gives gradients for each value of the input). Otherwise,
+        # only checks the outermost dimension of output to match input_shape (i.e. the batch size
+        # should be the same).
+        check_full_shape = [INPUT_OUTPUT_GRADIENTS]
+        for expected_key in expected_keys:
+            output[expected_key] = np.asarray(output[expected_key])
+            expected_shape = input_shape
+            actual_shape = output[expected_key].shape
+            if expected_key not in check_full_shape:
+                expected_shape = expected_shape[0]
+                actual_shape = actual_shape[0]
+            if expected_shape != actual_shape:
+                raise ValueError(SHAPE_ERROR_MESSAGE[expected_key].format(
+                    expected_shape, actual_shape))
