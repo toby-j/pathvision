@@ -6,3 +6,4 @@ from .visualisation import *
 from .vanilla import *
 from .tracking import *
 from .utils import *
+from .integrated_gradients import *

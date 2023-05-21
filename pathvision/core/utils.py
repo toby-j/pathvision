@@ -8,8 +8,6 @@ def write_to_csv(directory, class_idx, instance, **kwargs):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     # Check if the directory exists, create it if necessary
-    print(str(class_idx))
-    print(directory)
     class_folder = os.path.join(directory, str(class_idx))
     if not os.path.exists(class_folder):
         os.makedirs(class_folder)

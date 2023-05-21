@@ -123,7 +123,7 @@ def iterate_kalman_tracker(class_idxs, bb_boxes, kalman_tracker_dict):
 
                 LOGGER.debug("Distance between boxes: {}".format(distance))
 
-                if distance > 1500:
+                if distance > 1000:
                     LOGGER.debug("Distance was over 1000: {} for class".format(distance, class_idx))
                     class_errors.append([class_idx, tracked, ranked_bboxes[0][0], distance])
 
@@ -138,7 +138,6 @@ def iterate_kalman_tracker(class_idxs, bb_boxes, kalman_tracker_dict):
                 # If we have less new boxes than total tracked objects, we'll run out of new boxes.
                 if len(boxes_to_place) == 0:
                     break
-            # pprint.pprint(kalman_tracker)
 
             # For remaining boxes, initialise a new object inside the class to begin tracking
             for box in boxes_to_place:

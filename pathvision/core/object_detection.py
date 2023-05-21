@@ -255,6 +255,8 @@ class ObjectDetection(CorePathvision):
 
         vanilla_vision = pathvision.Vanilla()
 
+        integrated_vision = pathvision.IntegratedGradients()
+
         def _call_model_function(image, call_model_args=None, expected_keys=None):
             images = _preprocess_image(image)
 
@@ -301,8 +303,11 @@ class ObjectDetection(CorePathvision):
             if pre_trained_model == Models.FASTERCNN_RESNET50_FPN:
                 model = torchvision.models.detection.fasterrcnn_resnet50_fpn(pretrained=True, progress=True,
                                                                              num_classes=91, weights_backbone=True)
+            elif pre_trained_model == Models.MASKRCNN_RESNET50_FPN:
+                model = torchvision.models.detection.maskrcnn_resnet50_fpn(pretrained=True, progress=True,
+                                                                             num_classes=91, weights_backbone=True)
         else:
-            raise PARAMETER_ERROR_MESSAGE['PATHVISION CURRENTLY ONLY SUPPORTS PRE-TRAINED MODEL FASTERCNN_RESNET50_FPN']
+            raise PARAMETER_ERROR_MESSAGE['PATHVISION CURRENTLY ONLY SUPPORTS PRE-TRAINED MODEL FASTERCNN_RESNET50_FPN AND MASKRCNN_RESNET50_FPN']
 
         # Load annotations into memory
         coco_annotations = 'pathvision/data/instances_val2017.json'
@@ -380,13 +385,25 @@ class ObjectDetection(CorePathvision):
                             "overlap_ps": 0.
                         }
                     },
+                    "integrated_gradients": {
+                        "gradients": {
+                            "heatmap_3d": [],
+                            "raw": []
+                        },
+                        "result_images": {
+                            "full": [],
+                            "overlap": [],
+                            "internal": [],
+                        },
+                        "metrics": {
+                            "overlap_ps": 0.
+                        }
+                    },
                 }
 
-                folder_dict = {"VanillaGradients": "pathvision/test/outs/vanilla/",
-                               "Smoothgrad": "pathvision/test/outs/smoothgrad/"}
-
                 technique_dict = {"VanillaGradients": "vanilla",
-                                  "Smoothgrad": "smoothgrad"}
+                                  "Smoothgrad": "smoothgrad",
+                                  "IntegratedGradients": "integrated_gradients"}
 
                 '''
                 Let's crop and organise every bounding box image
@@ -430,88 +447,59 @@ class ObjectDetection(CorePathvision):
                 kalman_tracker_dict, class_errors = iterate_kalman_tracker(class_idxs, pre[0]['boxes'].detach(),
                                                                       kalman_tracker_dict)
 
-                # for error in class_errors:
-                #     image = _draw_bounding_boxes(frame_data['origin'], error[1], [error[2]])
-                #
-                #     if error[0] not in results["errors"].keys():
-                #         results["errors"].setdefault(error[0], {"kalman": []})
-                #
-                #     LOGGER.critical("Writing Kalman error: {}".format([frames.index(frame), image, error[0], error[3]]))
-                #     results["errors"][error[0]]['kalman'].append(
-                #         [frames.index(frame), _pil_to_base64(image), error[0], error[3]])
-
                 LOGGER.debug("Classes to analyse: {}".format(class_errors))
 
                 '''
                 Gradient calculation
                 '''
                 if len(class_errors) > 0:
-                    if LoadFromDisk == False:
-                        for i, tensor in enumerate(class_idxs):
-                            call_model_args = {class_idx_str: tensor.item()}
-                            cats = coco.loadCats(coco.getCatIds())
-                            cat_id = call_model_args[class_idx_str]
-                            cat_name = next(cat['name'] for cat in cats if cat['id'] == cat_id)
-                            LOGGER.debug("Category name for index value {}: {}".format(cat_id, cat_name))
-                            if technique_key == "vanilla":
-                                vanilla_mask_3d = vanilla_vision.GetMask(frame_data['crops'][i], _call_model_function,
-                                                                         call_model_args)
-                                heatmap_img, raw_gradients = pathvision.visualiseImageToHeatmap(
-                                    image_3d=vanilla_mask_3d)
-                                frame_data['vanilla']['gradients']['heatmap_3d'].append(heatmap_img)
-                                frame_data['vanilla']['gradients']['raw'].append(raw_gradients)
+                    for i, tensor in enumerate(class_idxs):
+                        call_model_args = {class_idx_str: tensor.item()}
+                        cats = coco.loadCats(coco.getCatIds())
+                        cat_id = call_model_args[class_idx_str]
+                        cat_name = next(cat['name'] for cat in cats if cat['id'] == cat_id)
+                        LOGGER.debug("Category name for index value {}: {}".format(cat_id, cat_name))
+                        if technique_key == "vanilla":
+                            vanilla_mask_3d = vanilla_vision.GetMask(frame_data['crops'][i], _call_model_function,
+                                                                     call_model_args)
+                            heatmap_img, raw_gradients = pathvision.visualiseImageToHeatmap(
+                                image_3d=vanilla_mask_3d)
+                            frame_data['vanilla']['gradients']['heatmap_3d'].append(heatmap_img)
+                            frame_data['vanilla']['gradients']['raw'].append(raw_gradients)
 
-                            elif technique_key == "smoothgrad":
-                                smoothgrad_mask_3d = vanilla_vision.GetSmoothedMask(frame_data['crops'][i],
-                                                                                    _call_model_function,
-                                                                                    call_model_args)
-                                heatmap_img, raw_gradients = pathvision.visualiseImageToHeatmap(
-                                    image_3d=smoothgrad_mask_3d)
-                                frame_data['smoothgrad']['gradients']['heatmap_3d'].append(heatmap_img)
-                                frame_data['smoothgrad']['gradients']['raw'].append(raw_gradients)
-                            else:
-                                raise RuntimeError(INCORRECT_CONFIG)
+                        elif technique_key == "smoothgrad":
+                            smoothgrad_mask_3d = vanilla_vision.GetSmoothedMask(frame_data['crops'][i],
+                                                                                _call_model_function,
+                                                                                call_model_args)
+                            heatmap_img, raw_gradients = pathvision.visualiseImageToHeatmap(
+                                image_3d=smoothgrad_mask_3d)
+                            frame_data['integrated_gradients']['gradients']['heatmap_3d'].append(heatmap_img)
+                            frame_data['integrated_gradients']['gradients']['raw'].append(raw_gradients)
+                        elif technique_key == "integrated_gradients":
+                            integrated_gradient_mask_3d = integrated_vision.GetMask(frame_data['crops'][i],
+                                                                                _call_model_function,
+                                                                                call_model_args)
+                            heatmap_img, raw_gradients = pathvision.visualiseImageToHeatmap(
+                                image_3d=integrated_gradient_mask_3d)
+                            frame_data['integrated_gradients']['gradients']['heatmap_3d'].append(heatmap_img)
+                            frame_data['integrated_gradients']['gradients']['raw'].append(raw_gradients)
+                        else:
+                            raise RuntimeError(INCORRECT_CONFIG)
 
-                            LOGGER.debug("Completed image {} of {}".format(frames.index(frame) + 1, len(frames) + 1))
-                            LOGGER.debug("Saving to disk")
+                        LOGGER.debug("Completed image {} of {}".format(frames.index(frame) + 1, len(frames) + 1))
+                        LOGGER.debug("Saving to disk")
 
-                            '''
-                            Checking that we have the same number of gradients in each category.
-                            '''
-                            vanilla_lengths = [len(frame_data['vanilla']['gradients'][key]) for key in
-                                               ['heatmap_3d']]
-                            smoothgrad_lengths = [len(frame_data['smoothgrad']['gradients'][key]) for key in
-                                                  ['heatmap_3d']]
-
-                            if not all(len_list == vanilla_lengths[0] for len_list in vanilla_lengths) and \
-                                    all(len_list == smoothgrad_lengths[0] for len_list in smoothgrad_lengths):
-                                raise RuntimeError(PARAMETER_ERROR_MESSAGE['UNEQUAL_GRADIENT_COUNT'])
                         '''
-                        DEBUG ONLY
-                        - Once we've calculated the gradients and added them to the dict, we can save them to disk for convenience
+                        Checking that we have the same number of gradients in each category.
                         '''
-                        if debug:
-                            if technique_key == "vanilla":
-                                for i in range(len(class_idxs)):
-                                    np.save('pathvision/test/outs/vanilla/heatmap/heatmap_image{}.npy'.format(i),
-                                            frame_data['vanilla']['gradients']['heatmap_3d'][i])
-                                    np.save('pathvision/test/outs/vanilla/raw/raw_grad{}.npy'.format(i),
-                                            vanilla_mask_3d)
+                        vanilla_lengths = [len(frame_data['vanilla']['gradients'][key]) for key in
+                                           ['heatmap_3d']]
+                        smoothgrad_lengths = [len(frame_data['smoothgrad']['gradients'][key]) for key in
+                                              ['heatmap_3d']]
 
-                            elif technique_key == "smoothgrad":
-                                for i in range(len(class_idxs)):
-                                    np.save('pathvision/test/outs/smoothgrad/heatmap/heatmap_image{}.npy'.format(i),
-                                            frame_data['smoothgrad']['gradients']['heatmap_3d'][i])
-                                    np.save('pathvision/test/outs/smoothgrad/raw/raw_grad{}.npy'.format(i),
-                                            smoothgrad_mask_3d)
-                    else:
-                        LOGGER.debug("Loading gradients from disk")
-                        folder = folder_dict.get(gradient_technique)
-                        # Loop through the files in the folder and load the numpy arrays
-                        for i, filename in enumerate(
-                                [f for f in os.listdir(folder + "heatmap/") if f.endswith('.npy')]):
-                            np_arr = np.load(os.path.join(folder, 'heatmap/heatmap_image{}.npy'.format(i)))
-                            frame_data[technique_key]['gradients']['heatmap_3d'].append(np_arr)
+                        if not all(len_list == vanilla_lengths[0] for len_list in vanilla_lengths) and \
+                                all(len_list == smoothgrad_lengths[0] for len_list in smoothgrad_lengths):
+                            raise RuntimeError(PARAMETER_ERROR_MESSAGE['UNEQUAL_GRADIENT_COUNT'])
 
                     if segmentation_technique == "Panoptic Deeplab":
                         cfg = get_cfg()
