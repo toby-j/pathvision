@@ -473,8 +473,9 @@ class ObjectDetection(CorePathvision):
                                                                                 call_model_args)
                             heatmap_img, raw_gradients = pathvision.visualiseImageToHeatmap(
                                 image_3d=smoothgrad_mask_3d)
-                            frame_data['integrated_gradients']['gradients']['heatmap_3d'].append(heatmap_img)
-                            frame_data['integrated_gradients']['gradients']['raw'].append(raw_gradients)
+                            frame_data['smoothgrad']['gradients']['heatmap_3d'].append(heatmap_img)
+                            frame_data['smoothgrad']['gradients']['raw'].append(raw_gradients)
+
                         elif technique_key == "integrated_gradients":
                             integrated_gradient_mask_3d = integrated_vision.GetMask(frame_data['crops'][i],
                                                                                 _call_model_function,
