@@ -123,6 +123,7 @@ def iterate_kalman_tracker(class_idxs, bb_boxes, kalman_tracker_dict):
 
                 LOGGER.debug("Distance between boxes: {}".format(distance))
 
+                # Euclidean distance threshold
                 if distance > 100:
                     LOGGER.debug("Distance was over 1000: {} for class".format(distance, class_idx))
                     class_errors.append([class_idx, tracked, ranked_bboxes[0][0], distance])
