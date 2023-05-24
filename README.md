@@ -1,8 +1,12 @@
 # Pathvision: An Explainable AI Method for Object Detection models
 
-Using an object-specific tracking algorithm with state-of-the-art gradient-based Explainable AI techniques to identify classification errors in Object Detection models 
+Using an object-specific tracking algorithm with state-of-the-art gradient-based Explainable AI techniques to identify classification errors in Object Detection models
 
-![Pathvision gif demo](docs/assets/demo.gif)
+# Vanilla Gradients
+![Pathvision gif demo vanilla](docs/assets/paris_cars_vanilla.gif)
+
+# Smoothgrad
+![Pathvision gif demo smoothgrad](docs/assets/paris_cars_smoothgrad.gif)
 
 Pathvision's only been developed and tested on **Microsoft Windows Only**
 
