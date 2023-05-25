@@ -54,7 +54,7 @@ python -c 'import torch; from torch.utils.cpp_extension import CUDA_HOME; print(
 If this prints `True` you'll be able to build Detectron2
 If it prints false, you may need to reinstall PyTorch with CUDA compute platform enabled, see: [Install PyTorch locally](https://pytorch.org/get-started/locally/).
 
-Unfortuently, I can't find a way to build Detectron2 without CUDA. On Linux you can use the pre-builds, see: ["Detectron2 Docs](https://detectron2.readthedocs.io/en/latest/tutorials/install.html)
+Unfortuently, I can't find a way to build Detectron2 without CUDA. On Linux you can use the pre-builds, see: [Detectron2 Docs](https://detectron2.readthedocs.io/en/latest/tutorials/install.html)
 
 Navigate to the Detectron2 folder:
 ```bash
