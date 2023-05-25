@@ -29,7 +29,7 @@ git clone https://github.com/toby-j/pathvision.git
 cd pathvision
 ```
 
-### **Step 1: Create venv (Optional but reccomended)**
+### **Step 1: Create venv (Optional but recommended)**
 I reccomend using a venv just for simplisity.
 ```bash
 python -m venv venv
