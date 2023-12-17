@@ -60,7 +60,7 @@ pip install .
 ```
 We've now built and installed the dependencies for Pathvision.
 
-Unfortuently, I can't find a way to build Detectron2 without CUDA. On Linux you can use the pre-builds, see: [Detectron2 Docs](https://detectron2.readthedocs.io/en/latest/tutorials/install.html). You then place the files inside of `pathvision/models/detectron2`
+Unfortunately, I can't find a way to build Detectron2 without CUDA. On Linux you can use the pre-builds, see: [Detectron2 Docs](https://detectron2.readthedocs.io/en/latest/tutorials/install.html). You then place the files inside of `pathvision/models/detectron2`
 
 ## Running
 There's a `tester.py` file which creates an instance of Pathvision's Object Detection feature and runs a predefined test using images from `debug/test_data`.
